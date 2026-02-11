@@ -18,13 +18,15 @@ client_secret = os.getenv("BLIZZARD_CLIENT_SECRET")
 
 # ------------[  DATA PERSISTENCE ]------------ #
 
+DATA_FILE = os.path.join(basedir, 'characters.json')
+
 def save_data(characters):
-    with open('characters.json', 'w') as f:
+    with open(DATA_FILE, 'w') as f:
         json.dump([c.to_dict() for c in characters], f, indent=4)
 
 def load_data():
     try:
-        with open('characters.json', 'r') as f:
+        with open(DATA_FILE, 'r') as f:
             content = f.read().strip()
             if not content:
                 return []
