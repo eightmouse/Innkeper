@@ -108,27 +108,29 @@
   </div>
 </div>
 
-<!-- ── Character Detail Panel ─────────────────────── -->
-<div id="detail-panel">
-  <div class="detail-banner" id="detail-banner">
-    <button class="detail-close" id="detail-close">✕</button>
-    <div class="detail-identity">
-      <div class="detail-name" id="detail-name">—</div>
-      <div class="detail-sub"  id="detail-sub">—</div>
-    </div>
-  </div>
-  <div class="detail-body">
-    <div class="detail-section-title">Activities</div>
-    <div id="detail-activities"></div>
-    <div class="reset-info">
-      <div class="detail-section-title" style="margin-bottom:8px; border:none; padding:0;">Reset Timers</div>
-      <div class="reset-row">
-        <span class="reset-label">Daily reset</span>
-        <span class="reset-value" id="reset-daily">—</span>
+<!-- ── Character Detail Modal (centered) ──────────── -->
+<div id="detail-overlay" class="modal-overlay">
+  <div id="detail-modal">
+    <div class="detail-banner" id="detail-banner">
+      <button class="detail-close" id="detail-close">✕</button>
+      <div class="detail-identity">
+        <div class="detail-name" id="detail-name">—</div>
+        <div class="detail-sub"  id="detail-sub">—</div>
       </div>
-      <div class="reset-row">
-        <span class="reset-label">Weekly reset</span>
-        <span class="reset-value" id="reset-weekly">—</span>
+    </div>
+    <div class="detail-body">
+      <div class="detail-section-title">Activities</div>
+      <div id="detail-activities"></div>
+      <div class="reset-info">
+        <div class="detail-section-title" style="margin-bottom:8px; border:none; padding:0;">Reset Timers</div>
+        <div class="reset-row">
+          <span class="reset-label">Daily reset</span>
+          <span class="reset-value" id="reset-daily">—</span>
+        </div>
+        <div class="reset-row">
+          <span class="reset-label">Weekly reset</span>
+          <span class="reset-value" id="reset-weekly">—</span>
+        </div>
       </div>
     </div>
   </div>
@@ -248,12 +250,12 @@ function renderGrid() {
   });
 }
 
-// ── Detail Panel ─────────────────────────────────────
+// ── Detail Modal (centered) ───────────────────────
 function openDetail(idx) {
   detailIndex = idx;
-  const char  = characters[idx];
-  const panel = document.getElementById('detail-panel');
-  const banner = document.getElementById('detail-banner');
+  const char    = characters[idx];
+  const overlay = document.getElementById('detail-overlay');
+  const banner  = document.getElementById('detail-banner');
 
   if (char.portrait_url) {
     banner.style.backgroundImage = `url('${char.portrait_url}')`;
@@ -273,6 +275,7 @@ function openDetail(idx) {
     const checked = data.status === 'completed';
     const row = document.createElement('div');
     row.className = 'activity-row';
+    row.dataset.activity = name;
     row.innerHTML = `
       <div class="activity-row-left">
         <span class="activity-icon">${icon}</span>
@@ -291,11 +294,11 @@ function openDetail(idx) {
   });
 
   updateResetTimers();
-  panel.classList.add('open');
+  overlay.classList.add('open');
 }
 
 function closeDetail() {
-  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('detail-overlay').classList.remove('open');
   detailIndex = null;
 }
 
@@ -310,13 +313,25 @@ function updateResetTimers() {
 
 setInterval(() => { if (detailIndex !== null) updateResetTimers(); }, 60000);
 
-// ── Toggle Activity ───────────────────────────────────
+// ── Toggle Activity — surgical update, no full re-render ──
 function toggleActivity(charIdx, activityName, isDone) {
   const char = characters[charIdx];
   if (!char?.activities[activityName]) return;
   char.activities[activityName].status = isDone ? 'completed' : 'available';
-  renderGrid();
-  openDetail(charIdx); // sync panel
+
+  // 1. Update only the matching pip on the card (no renderGrid)
+  const card = document.querySelector(`#character-grid .char-card:nth-child(${charIdx + 1})`);
+  if (card) {
+    const pips = card.querySelectorAll('.activity-pip');
+    const actKeys = Object.keys(char.activities);
+    const pipIdx  = actKeys.indexOf(activityName);
+    if (pips[pipIdx]) {
+      pips[pipIdx].className = `activity-pip ${isDone ? 'done' : 'available'}`;
+    }
+  }
+
+  // 2. No need to touch the modal — the checkbox already reflects the new state
+
   sendToPython(`TOGGLE_ACTIVITY:${char.name}:${char.realm}:${activityName}`);
 }
 
@@ -422,6 +437,9 @@ document.getElementById('github-link').addEventListener('click', (e) => {
 
 // ── Detail close ──────────────────────────────────────
 document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('detail-overlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('detail-overlay')) closeDetail();
+});
 
 // ── Window Controls ───────────────────────────────────
 if (ipcRenderer) {
