@@ -11,23 +11,27 @@
 <body>
 <div id="app">
 
-  <!-- ── Title / Menu Bar (combined) ──────────── -->
   <div id="titlebar">
     <div id="titlebar-left">
       <span id="titlebar-title">INNKEEPER</span>
       <div id="menubar">
-        <div class="menu-item">Settings</div>
-        <div class="menu-item">Info</div>
+        <div class="menu-item" id="menu-settings">Settings</div>
+        <div class="menu-item" id="menu-info">Info</div>
       </div>
     </div>
     <div id="window-controls">
-      <button class="win-btn min"   id="btn-min"   title="Minimize">&#x2212;</button>
-      <button class="win-btn max"   id="btn-max"   title="Maximize">&#x25A1;</button>
-      <button class="win-btn close" id="btn-close" title="Close">&#x2715;</button>
+      <button class="win-btn min" id="btn-min" title="Minimize">
+        <svg width="11" height="1" viewBox="0 0 11 1"><line x1="0" y1="0.5" x2="11" y2="0.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </button>
+      <button class="win-btn max" id="btn-max" title="Maximize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.6" y="0.6" width="8.8" height="8.8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="win-btn close" id="btn-close" title="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
     </div>
   </div>
 
-  <!-- ── Main Content ──────────────────────────── -->
   <div id="content">
     <div id="empty-state">
       <div class="empty-icon">⚔️</div>
@@ -38,10 +42,9 @@
 
 </div>
 
-<!-- ── Add Character Button ──────────────────────── -->
 <button id="add-btn" title="Add Character">+</button>
 
-<!-- ── Add Character Modal ───────────────────────── -->
+<!-- Add Character Modal -->
 <div id="add-modal" class="modal-overlay">
   <div class="modal">
     <h2>Add Character</h2>
@@ -50,8 +53,9 @@
       <input type="text" id="input-name" placeholder="e.g. Arthas" autocomplete="off" />
     </div>
     <div class="form-group">
-      <label>Realm <span style="font-weight:300; text-transform:none; letter-spacing:0; color: var(--text-muted); opacity:0.7;">(leave blank to search all)</span></label>
-      <input type="text" id="input-realm" placeholder="e.g. Silvermoon" autocomplete="off" />
+      <label>Realm <span class="label-hint">(leave blank to search all)</span></label>
+      <input type="text" id="input-realm" placeholder="e.g. Silvermoon" autocomplete="off" list="realm-list" />
+      <datalist id="realm-list"></datalist>
     </div>
     <div class="form-group">
       <label>Region</label>
@@ -64,12 +68,24 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
-      <button class="btn btn-primary"   id="modal-submit">Search & Add</button>
+      <button class="btn btn-primary" id="modal-submit">Search & Add</button>
     </div>
   </div>
 </div>
 
-<!-- ── Info Modal ──────────────────────────────────── -->
+<!-- Delete Confirm Modal -->
+<div id="delete-modal" class="modal-overlay">
+  <div class="modal">
+    <h2>Remove Character</h2>
+    <p id="delete-modal-msg" style="font-size:13px; color:var(--text-muted); margin-bottom:20px; line-height:1.5;"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="delete-cancel">Cancel</button>
+      <button class="btn btn-danger" id="delete-confirm">Remove</button>
+    </div>
+  </div>
+</div>
+
+<!-- Info Modal -->
 <div id="info-modal" class="modal-overlay">
   <div class="modal">
     <h2>About Innkeeper</h2>
@@ -82,12 +98,12 @@
       </div>
       <div class="info-row">
         <span class="info-label">GitHub</span>
-        <!-- ↓ Update this href to your GitHub URL -->
-        <a class="info-link" id="github-link" href="https://github.com/eightmouse" target="_blank">github.com/eightmouse</a>
+        <!-- Update this href to your GitHub URL -->
+        <a class="info-link" id="github-link" href="https://github.com/eightmouse">github.com/eightmouse</a>
       </div>
       <div class="info-row">
         <span class="info-label">Version</span>
-        <span class="info-value">0.8</span>
+        <span class="info-value">0.9</span>
       </div>
     </div>
     <div class="modal-actions">
@@ -96,26 +112,16 @@
   </div>
 </div>
 
-<!-- ── Delete Confirm Modal ───────────────────────── -->
-<div id="delete-modal" class="modal-overlay">
-  <div class="modal">
-    <h2>Remove Character</h2>
-    <p id="delete-modal-msg" style="font-size:13px; color: var(--text-muted); margin-bottom:20px; line-height:1.5;"></p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" id="delete-cancel">Cancel</button>
-      <button class="btn btn-danger"    id="delete-confirm">Remove</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Character Detail Modal (centered) ──────────── -->
+<!-- Character Detail Modal -->
 <div id="detail-overlay" class="modal-overlay">
   <div id="detail-modal">
     <div class="detail-banner" id="detail-banner">
-      <button class="detail-close" id="detail-close">✕</button>
+      <button class="detail-close" id="detail-close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
       <div class="detail-identity">
         <div class="detail-name" id="detail-name">—</div>
-        <div class="detail-sub"  id="detail-sub">—</div>
+        <div class="detail-sub" id="detail-sub">—</div>
       </div>
     </div>
     <div class="detail-body">
@@ -136,34 +142,25 @@
   </div>
 </div>
 
-<!-- ── Toast ──────────────────────────────────────── -->
 <div id="toast"></div>
 
 <script>
 'use strict';
 
-// ── IPC ──────────────────────────────────────────────
 let ipcRenderer;
-try {
-  ({ ipcRenderer } = require('electron'));
-} catch (e) {
-  console.warn('No Electron IPC — browser preview mode');
-}
+try { ({ ipcRenderer } = require('electron')); }
+catch (e) { console.warn('No Electron IPC'); }
 
 function sendToPython(cmd) {
-  if (ipcRenderer) {
-    ipcRenderer.send('to-python', cmd);
-  } else {
-    console.log('[→ Python mock]', cmd);
-  }
+  if (ipcRenderer) ipcRenderer.send('to-python', cmd);
+  else console.log('[→ Python mock]', cmd);
 }
 
-// ── State ────────────────────────────────────────────
-let characters = [];
-let detailIndex = null;
-let pendingDeleteIndex = null;
+let characters    = [];
+let detailIndex   = null;
+let pendingDelete = null;
+const realmCache  = {};
 
-// ── Activity metadata ────────────────────────────────
 const ACTIVITY_META = {
   'Raid':         { icon: '⚔️' },
   'Mythic+':      { icon: '🔑' },
@@ -171,7 +168,23 @@ const ACTIVITY_META = {
   'World Quests': { icon: '📜' },
 };
 
-// ── Toast ─────────────────────────────────────────────
+// Class-specific card background gradients (WoW class IDs 1-13)
+const CLASS_COLORS = {
+  1:  ['#2a1a08', '#110900'],  // Warrior
+  2:  ['#2a1a1a', '#12080c'],  // Paladin
+  3:  ['#142010', '#080e06'],  // Hunter
+  4:  ['#252208', '#0e0c00'],  // Rogue
+  5:  ['#1e1e1e', '#0a0a0a'],  // Priest
+  6:  ['#200608', '#0c0002'],  // Death Knight
+  7:  ['#08182a', '#020810'],  // Shaman
+  8:  ['#081e2a', '#020c12'],  // Mage
+  9:  ['#14082a', '#080012'],  // Warlock
+  10: ['#04200e', '#020c06'],  // Monk
+  11: ['#221408', '#0c0800'],  // Druid
+  12: ['#180828', '#080010'],  // Demon Hunter
+  13: ['#082018', '#020e0a'],  // Evoker
+};
+
 function showToast(msg, isError = false) {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -180,18 +193,15 @@ function showToast(msg, isError = false) {
   el._t = setTimeout(() => el.className = '', isError ? 5000 : 2800);
 }
 
-// ── Reset timer helpers ───────────────────────────────
 function getNextReset(type) {
   const now  = new Date();
   const next = new Date(now);
   next.setUTCHours(8, 0, 0, 0);
-
   if (type === 'daily') {
     if (now >= next) next.setUTCDate(next.getUTCDate() + 1);
   } else {
-    // Wednesday 08:00 UTC
-    const daysUntil = (3 - now.getUTCDay() + 7) % 7 || 7;
-    next.setUTCDate(next.getUTCDate() + daysUntil);
+    const d = (3 - now.getUTCDay() + 7) % 7 || 7;
+    next.setUTCDate(next.getUTCDate() + d);
     if (now.getUTCDay() === 3 && now >= next) next.setUTCDate(next.getUTCDate() + 7);
   }
   return next;
@@ -199,40 +209,39 @@ function getNextReset(type) {
 
 function formatTimeUntil(date) {
   const diff = date - Date.now();
-  if (diff <= 0) return { text: 'Now',    cls: 'now' };
-  const h    = Math.floor(diff / 3600000);
-  const m    = Math.floor((diff % 3600000) / 60000);
-  const text = h > 0 ? `${h}h ${m}m` : `${m}m`;
-  return { text, cls: h < 2 ? 'soon' : '' };
+  if (diff <= 0) return { text: 'Now', cls: 'now' };
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  return { text: h > 0 ? `${h}h ${m}m` : `${m}m`, cls: h < 2 ? 'soon' : '' };
 }
 
-// ── Render Grid ──────────────────────────────────────
 function renderGrid() {
   const grid  = document.getElementById('character-grid');
   const empty = document.getElementById('empty-state');
   grid.innerHTML = '';
-
-  if (!characters.length) {
-    empty.classList.add('visible');
-    return;
-  }
+  if (!characters.length) { empty.classList.add('visible'); return; }
   empty.classList.remove('visible');
 
   characters.forEach((char, idx) => {
-    const card = document.createElement('div');
-    card.className = 'char-card';
+    const card      = document.createElement('div');
+    card.className  = 'char-card';
 
-    const hasPortrait   = !!char.portrait_url;
-    const portraitStyle = hasPortrait ? `background-image:url('${char.portrait_url}');` : '';
+    const colors    = CLASS_COLORS[char.class_id] || ['#0c1410', '#060e08'];
+    const bgStyle   = char.portrait_url
+      ? `background-image: url('${char.portrait_url}'); background-size: cover; background-position: center top;`
+      : `background: linear-gradient(160deg, ${colors[0]} 0%, ${colors[1]} 100%);`;
+
     const pips = Object.entries(char.activities || {}).map(([name, data]) =>
       `<div class="activity-pip ${data.status === 'completed' ? 'done' : 'available'}" title="${name}"></div>`
     ).join('');
 
     card.innerHTML = `
-      <div class="card-portrait ${hasPortrait ? '' : 'placeholder'}" style="${portraitStyle}">
-        ${hasPortrait ? '' : '<div class="placeholder-icon">🧙</div>'}
+      <div class="card-bg" style="${bgStyle}">
+        ${!char.portrait_url ? '<div class="placeholder-icon">🧙</div>' : ''}
       </div>
-      <button class="card-close" title="Remove">✕</button>
+      <button class="card-close" title="Remove">
+        <svg width="8" height="8" viewBox="0 0 8 8"><line x1="0.5" y1="0.5" x2="7.5" y2="7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="7.5" y1="0.5" x2="0.5" y2="7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
       <div class="card-info">
         <div class="card-name">${char.name} (${char.level})</div>
         <div class="card-realm">${char.realm}</div>
@@ -241,41 +250,48 @@ function renderGrid() {
     `;
 
     card.querySelector('.card-close').addEventListener('click', (e) => {
-      e.stopPropagation();
-      openDeleteModal(idx);
+      e.stopPropagation(); openDeleteModal(idx);
     });
-
     card.addEventListener('click', () => openDetail(idx));
     grid.appendChild(card);
   });
 }
 
-// ── Detail Modal (centered) ───────────────────────
+function updateCardPip(charIdx, activityName, isDone) {
+  const card = document.querySelector(`#character-grid .char-card:nth-child(${charIdx + 1})`);
+  if (!card) return;
+  const keys   = Object.keys(characters[charIdx].activities);
+  const pipIdx = keys.indexOf(activityName);
+  const pips   = card.querySelectorAll('.activity-pip');
+  if (pips[pipIdx]) {
+    pips[pipIdx].className = `activity-pip ${isDone ? 'done' : 'available'}`;
+  }
+}
+
 function openDetail(idx) {
-  detailIndex = idx;
-  const char    = characters[idx];
-  const overlay = document.getElementById('detail-overlay');
-  const banner  = document.getElementById('detail-banner');
+  detailIndex  = idx;
+  const char   = characters[idx];
+  const banner = document.getElementById('detail-banner');
+  const colors = CLASS_COLORS[char.class_id] || ['#0c1410', '#060e08'];
 
   if (char.portrait_url) {
     banner.style.backgroundImage = `url('${char.portrait_url}')`;
-    banner.classList.remove('placeholder');
+    banner.style.backgroundSize  = 'cover';
+    banner.style.backgroundPosition = 'center top';
   } else {
-    banner.style.backgroundImage = '';
-    banner.classList.add('placeholder');
+    banner.style.backgroundImage = `linear-gradient(160deg, ${colors[0]} 0%, ${colors[1]} 100%)`;
   }
 
   document.getElementById('detail-name').textContent = `${char.name} (${char.level})`;
-  document.getElementById('detail-sub').textContent  = char.realm;
+  document.getElementById('detail-sub').textContent  = `${char.realm} · ${char.class_name || char.region.toUpperCase()}`;
 
   const actList = document.getElementById('detail-activities');
   actList.innerHTML = '';
   Object.entries(char.activities || {}).forEach(([name, data]) => {
     const icon    = (ACTIVITY_META[name] || {}).icon || '•';
     const checked = data.status === 'completed';
-    const row = document.createElement('div');
+    const row     = document.createElement('div');
     row.className = 'activity-row';
-    row.dataset.activity = name;
     row.innerHTML = `
       <div class="activity-row-left">
         <span class="activity-icon">${icon}</span>
@@ -294,7 +310,7 @@ function openDetail(idx) {
   });
 
   updateResetTimers();
-  overlay.classList.add('open');
+  document.getElementById('detail-overlay').classList.add('open');
 }
 
 function closeDetail() {
@@ -310,34 +326,18 @@ function updateResetTimers() {
     el.className   = 'reset-value ' + cls;
   });
 }
-
 setInterval(() => { if (detailIndex !== null) updateResetTimers(); }, 60000);
 
-// ── Toggle Activity — surgical update, no full re-render ──
 function toggleActivity(charIdx, activityName, isDone) {
   const char = characters[charIdx];
   if (!char?.activities[activityName]) return;
   char.activities[activityName].status = isDone ? 'completed' : 'available';
-
-  // 1. Update only the matching pip on the card (no renderGrid)
-  const card = document.querySelector(`#character-grid .char-card:nth-child(${charIdx + 1})`);
-  if (card) {
-    const pips = card.querySelectorAll('.activity-pip');
-    const actKeys = Object.keys(char.activities);
-    const pipIdx  = actKeys.indexOf(activityName);
-    if (pips[pipIdx]) {
-      pips[pipIdx].className = `activity-pip ${isDone ? 'done' : 'available'}`;
-    }
-  }
-
-  // 2. No need to touch the modal — the checkbox already reflects the new state
-
+  updateCardPip(charIdx, activityName, isDone);
   sendToPython(`TOGGLE_ACTIVITY:${char.name}:${char.realm}:${activityName}`);
 }
 
-// ── Delete Modal ──────────────────────────────────────
 function openDeleteModal(idx) {
-  pendingDeleteIndex = idx;
+  pendingDelete = idx;
   const char = characters[idx];
   document.getElementById('delete-modal-msg').textContent =
     `Remove ${char.name} from ${char.realm}? This cannot be undone.`;
@@ -346,34 +346,53 @@ function openDeleteModal(idx) {
 
 document.getElementById('delete-cancel').addEventListener('click', () => {
   document.getElementById('delete-modal').classList.remove('open');
-  pendingDeleteIndex = null;
+  pendingDelete = null;
 });
 
 document.getElementById('delete-confirm').addEventListener('click', () => {
-  if (pendingDeleteIndex === null) return;
-  const char = characters[pendingDeleteIndex];
+  if (pendingDelete === null) return;
+  const char = characters[pendingDelete];
   sendToPython(`DELETE_CHARACTER:${char.name}:${char.realm}`);
-  if (detailIndex === pendingDeleteIndex) closeDetail();
-  characters.splice(pendingDeleteIndex, 1);
-  pendingDeleteIndex = null;
+  if (detailIndex === pendingDelete) closeDetail();
+  characters.splice(pendingDelete, 1);
+  pendingDelete = null;
   document.getElementById('delete-modal').classList.remove('open');
   renderGrid();
   showToast(`${char.name} removed`);
 });
 
-// ── Add Modal ─────────────────────────────────────────
+// Realm autocomplete — fetch on region change, cache per region
+function loadRealms(region) {
+  if (realmCache[region]) {
+    populateDatalist(realmCache[region]);
+  } else {
+    sendToPython(`GET_REALMS:${region}`);
+  }
+}
+
+function populateDatalist(realms) {
+  const dl = document.getElementById('realm-list');
+  dl.innerHTML = realms.map(r => `<option value="${r}">`).join('');
+}
+
+document.getElementById('input-region').addEventListener('change', (e) => {
+  loadRealms(e.target.value);
+});
+
 const addModal    = document.getElementById('add-modal');
 const inputName   = document.getElementById('input-name');
 const inputRegion = document.getElementById('input-region');
 
 document.getElementById('add-btn').addEventListener('click', () => {
   addModal.classList.add('open');
+  loadRealms(inputRegion.value);
   inputName.focus();
 });
 
 function closeAddModal() {
   addModal.classList.remove('open');
   inputName.value = '';
+  document.getElementById('input-realm').value = '';
 }
 
 document.getElementById('modal-cancel').addEventListener('click', closeAddModal);
@@ -383,14 +402,11 @@ document.getElementById('modal-submit').addEventListener('click', () => {
   const name   = inputName.value.trim();
   const realm  = document.getElementById('input-realm').value.trim();
   const region = inputRegion.value;
-  if (!name) {
-    inputName.focus();
-    return;
-  }
+  if (!name) { inputName.focus(); return; }
 
-  const submitBtn = document.getElementById('modal-submit');
-  submitBtn.textContent = 'Searching…';
-  submitBtn.disabled = true;
+  const btn = document.getElementById('modal-submit');
+  btn.textContent = 'Searching…';
+  btn.disabled    = true;
 
   if (realm) {
     showToast(`Looking up ${name} on ${realm} (${region.toUpperCase()})…`);
@@ -400,21 +416,20 @@ document.getElementById('modal-submit').addEventListener('click', () => {
     sendToPython(`AUTO_ADD:${region}:${name}`);
   }
   closeAddModal();
-  // Re-enable after a delay in case the response never arrives
-  setTimeout(() => { submitBtn.textContent = 'Search & Add'; submitBtn.disabled = false; }, 500);
+  setTimeout(() => { btn.textContent = 'Search & Add'; btn.disabled = false; }, 500);
 });
 
 inputName.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('modal-submit').click();
 });
 
-// ── Info Modal ────────────────────────────────────
-document.querySelectorAll('.menu-item').forEach(item => {
-  if (item.textContent.trim() === 'Info') {
-    item.addEventListener('click', () => {
-      document.getElementById('info-modal').classList.add('open');
-    });
-  }
+document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('detail-overlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('detail-overlay')) closeDetail();
+});
+
+document.getElementById('menu-info').addEventListener('click', () => {
+  document.getElementById('info-modal').classList.add('open');
 });
 document.getElementById('info-close').addEventListener('click', () => {
   document.getElementById('info-modal').classList.remove('open');
@@ -424,48 +439,34 @@ document.getElementById('info-modal').addEventListener('click', (e) => {
     document.getElementById('info-modal').classList.remove('open');
 });
 
-// Open GitHub link in real browser (not inside Electron)
 document.getElementById('github-link').addEventListener('click', (e) => {
   e.preventDefault();
   const url = e.currentTarget.href;
-  if (ipcRenderer) {
-    ipcRenderer.send('open-external', url);
-  } else {
-    window.open(url, '_blank');
-  }
+  if (ipcRenderer) ipcRenderer.send('open-external', url);
+  else window.open(url, '_blank');
 });
 
-// ── Detail close ──────────────────────────────────────
-document.getElementById('detail-close').addEventListener('click', closeDetail);
-document.getElementById('detail-overlay').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('detail-overlay')) closeDetail();
-});
-
-// ── Window Controls ───────────────────────────────────
 if (ipcRenderer) {
   document.getElementById('btn-close').addEventListener('click', () => ipcRenderer.send('window-close'));
   document.getElementById('btn-min').addEventListener('click',   () => ipcRenderer.send('window-minimize'));
   document.getElementById('btn-max').addEventListener('click',   () => ipcRenderer.send('window-maximize'));
-}
 
-// ── Receive from Python ───────────────────────────────
-if (ipcRenderer) {
   ipcRenderer.on('from-python', (event, raw) => {
     try {
       const data = JSON.parse(raw);
-      if (Array.isArray(data)) {
-        characters = data;
-        renderGrid();
-        return;
-      }
+      if (Array.isArray(data)) { characters = data; renderGrid(); return; }
+
       if (data.status === 'added') {
         characters.push(data.character);
         renderGrid();
         showToast(`${data.character.name} added!`);
       } else if (data.status === 'not_found') {
-        showToast('Character not found — check the name?', true);
+        showToast('Character not found — check name and realm', true);
       } else if (data.status === 'error') {
         showToast(data.message || 'Something went wrong', true);
+      } else if (data.status === 'realms') {
+        realmCache[data.region] = data.realms;
+        if (data.region === inputRegion.value) populateDatalist(data.realms);
       }
     } catch (e) {
       console.error('from-python parse error:', e);
@@ -473,7 +474,6 @@ if (ipcRenderer) {
   });
 }
 
-// ── Boot ──────────────────────────────────────────────
 renderGrid();
 </script>
 </body>
