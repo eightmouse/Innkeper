@@ -54,8 +54,10 @@
     </div>
     <div class="form-group">
       <label>Realm <span class="label-hint">(leave blank to search all)</span></label>
-      <input type="text" id="input-realm" placeholder="e.g. Silvermoon" autocomplete="off" list="realm-list" />
-      <datalist id="realm-list"></datalist>
+      <div class="autocomplete-wrap">
+        <input type="text" id="input-realm" placeholder="e.g. Silvermoon" autocomplete="off" />
+        <div id="realm-dropdown" class="autocomplete-dropdown"></div>
+      </div>
     </div>
     <div class="form-group">
       <label>Region</label>
@@ -168,21 +170,22 @@ const ACTIVITY_META = {
   'World Quests': { icon: '📜' },
 };
 
-// Class-specific card background gradients (WoW class IDs 1-13)
-const CLASS_COLORS = {
-  1:  ['#2a1a08', '#110900'],  // Warrior
-  2:  ['#2a1a1a', '#12080c'],  // Paladin
-  3:  ['#142010', '#080e06'],  // Hunter
-  4:  ['#252208', '#0e0c00'],  // Rogue
-  5:  ['#1e1e1e', '#0a0a0a'],  // Priest
-  6:  ['#200608', '#0c0002'],  // Death Knight
-  7:  ['#08182a', '#020810'],  // Shaman
-  8:  ['#081e2a', '#020c12'],  // Mage
-  9:  ['#14082a', '#080012'],  // Warlock
-  10: ['#04200e', '#020c06'],  // Monk
-  11: ['#221408', '#0c0800'],  // Druid
-  12: ['#180828', '#080010'],  // Demon Hunter
-  13: ['#082018', '#020e0a'],  // Evoker
+// Per-class atmospheric card backgrounds — [gradient, symbol emoji]
+// Class IDs match Blizzard's playable-class IDs (1–13)
+const CLASS_BG = {
+  1:  ['radial-gradient(ellipse at 50% 100%, #6b3a10 0%, #3a1a06 45%, #130804 100%)', '⚔️'],  // Warrior
+  2:  ['radial-gradient(ellipse at 50% 100%, #7a5c10 0%, #3a2806 48%, #120c04 100%)', '🛡️'],  // Paladin
+  3:  ['radial-gradient(ellipse at 50% 100%, #183a10 0%, #0c2008 48%, #060e04 100%)', '🏹'],  // Hunter
+  4:  ['radial-gradient(ellipse at 50% 100%, #2a2210 0%, #161008 50%, #080604 100%)', '🗡️'],  // Rogue
+  5:  ['radial-gradient(ellipse at 50% 100%, #303030 0%, #181818 48%, #080808 100%)', '✨'],  // Priest
+  6:  ['radial-gradient(ellipse at 30% 90%, #6e0e0e 0%, #1a0a18 45%, #04040e 100%)', '💀'],  // Death Knight
+  7:  ['radial-gradient(ellipse at 50% 100%, #0e2a4a 0%, #081828 48%, #030810 100%)', '⚡'],  // Shaman
+  8:  ['radial-gradient(ellipse at 50% 100%, #1a0e4a 0%, #0e0830 50%, #040210 100%)', '🔮'],  // Mage
+  9:  ['radial-gradient(ellipse at 50% 100%, #1c0e3a 0%, #0c0820 50%, #04020e 100%)', '🔥'],  // Warlock
+  10: ['radial-gradient(ellipse at 50% 100%, #0a3018 0%, #061a0e 48%, #020a06 100%)', '🌿'],  // Monk
+  11: ['radial-gradient(ellipse at 50% 100%, #2a3a08 0%, #141e04 48%, #080a02 100%)', '🍂'],  // Druid
+  12: ['radial-gradient(ellipse at 50% 100%, #200a3a 0%, #100420 50%, #04010e 100%)', '👁️'],  // Demon Hunter
+  13: ['radial-gradient(ellipse at 50% 100%, #083a2a 0%, #041e16 48%, #020e0a 100%)', '🐉'],  // Evoker
 };
 
 function showToast(msg, isError = false) {
@@ -226,10 +229,14 @@ function renderGrid() {
     const card      = document.createElement('div');
     card.className  = 'char-card';
 
-    const colors    = CLASS_COLORS[char.class_id] || ['#0c1410', '#060e08'];
-    const bgStyle   = char.portrait_url
+    const [gradient, symbol] = CLASS_BG[char.class_id] || ['radial-gradient(ellipse at 50% 100%, #0c1a10 0%, #060e08 100%)', '🧙'];
+    const bgStyle = char.portrait_url
       ? `background-image: url('${char.portrait_url}'); background-size: cover; background-position: center top;`
-      : `background: linear-gradient(160deg, ${colors[0]} 0%, ${colors[1]} 100%);`;
+      : `background: ${gradient};`;
+
+    const specLine = (char.class_name || char.spec_name)
+      ? `<div class="card-spec">${[char.spec_name, char.class_name].filter(Boolean).join(' · ')}</div>`
+      : '';
 
     const pips = Object.entries(char.activities || {}).map(([name, data]) =>
       `<div class="activity-pip ${data.status === 'completed' ? 'done' : 'available'}" title="${name}"></div>`
@@ -237,14 +244,18 @@ function renderGrid() {
 
     card.innerHTML = `
       <div class="card-bg" style="${bgStyle}">
-        ${!char.portrait_url ? '<div class="placeholder-icon">🧙</div>' : ''}
+        ${!char.portrait_url ? `<div class="class-symbol">${symbol}</div>` : ''}
       </div>
       <button class="card-close" title="Remove">
-        <svg width="8" height="8" viewBox="0 0 8 8"><line x1="0.5" y1="0.5" x2="7.5" y2="7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="7.5" y1="0.5" x2="0.5" y2="7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 8 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
       </button>
       <div class="card-info">
         <div class="card-name">${char.name} (${char.level})</div>
         <div class="card-realm">${char.realm}</div>
+        ${specLine}
         <div class="card-activities">${pips}</div>
       </div>
     `;
@@ -272,18 +283,20 @@ function openDetail(idx) {
   detailIndex  = idx;
   const char   = characters[idx];
   const banner = document.getElementById('detail-banner');
-  const colors = CLASS_COLORS[char.class_id] || ['#0c1410', '#060e08'];
+  const [gradient] = CLASS_BG[char.class_id] || ['radial-gradient(ellipse at 50% 100%, #0c1a10 0%, #060e08 100%)', '🧙'];
 
   if (char.portrait_url) {
-    banner.style.backgroundImage = `url('${char.portrait_url}')`;
-    banner.style.backgroundSize  = 'cover';
+    banner.style.backgroundImage    = `url('${char.portrait_url}')`;
+    banner.style.backgroundSize     = 'cover';
     banner.style.backgroundPosition = 'center top';
   } else {
-    banner.style.backgroundImage = `linear-gradient(160deg, ${colors[0]} 0%, ${colors[1]} 100%)`;
+    banner.style.backgroundImage = gradient;
+    banner.style.backgroundSize  = '';
   }
 
   document.getElementById('detail-name').textContent = `${char.name} (${char.level})`;
-  document.getElementById('detail-sub').textContent  = `${char.realm} · ${char.class_name || char.region.toUpperCase()}`;
+  const subParts = [char.realm, char.class_name, char.spec_name].filter(Boolean);
+  document.getElementById('detail-sub').textContent  = subParts.join(' · ');
 
   const actList = document.getElementById('detail-activities');
   actList.innerHTML = '';
@@ -370,14 +383,46 @@ function loadRealms(region) {
   }
 }
 
-function populateDatalist(realms) {
-  const dl = document.getElementById('realm-list');
-  dl.innerHTML = realms.map(r => `<option value="${r}">`).join('');
+// ── Realm autocomplete ────────────────────────────
+function populateRealms(realms) {
+  realmCache[document.getElementById('input-region').value] = realms;
+}
+
+function showRealmSuggestions(query) {
+  const region  = document.getElementById('input-region').value;
+  const realms  = realmCache[region] || [];
+  const dropdown = document.getElementById('realm-dropdown');
+  if (!query || !realms.length) { dropdown.classList.remove('open'); return; }
+
+  const q       = query.toLowerCase();
+  const matches = realms.filter(r => r.toLowerCase().startsWith(q)).slice(0, 7);
+
+  if (!matches.length) { dropdown.classList.remove('open'); return; }
+  dropdown.innerHTML = matches.map(r =>
+    `<div class="autocomplete-item">${r}</div>`
+  ).join('');
+  dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+    item.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      document.getElementById('input-realm').value = item.textContent;
+      dropdown.classList.remove('open');
+    });
+  });
+  dropdown.classList.add('open');
+}
+
+function loadRealms(region) {
+  if (!realmCache[region]) sendToPython(`GET_REALMS:${region}`);
 }
 
 document.getElementById('input-region').addEventListener('change', (e) => {
   loadRealms(e.target.value);
+  document.getElementById('realm-dropdown').classList.remove('open');
 });
+
+const realmInput = document.getElementById('input-realm');
+realmInput.addEventListener('input', () => showRealmSuggestions(realmInput.value));
+realmInput.addEventListener('blur',  () => setTimeout(() => document.getElementById('realm-dropdown').classList.remove('open'), 150));
 
 const addModal    = document.getElementById('add-modal');
 const inputName   = document.getElementById('input-name');
@@ -465,8 +510,8 @@ if (ipcRenderer) {
       } else if (data.status === 'error') {
         showToast(data.message || 'Something went wrong', true);
       } else if (data.status === 'realms') {
-        realmCache[data.region] = data.realms;
-        if (data.region === inputRegion.value) populateDatalist(data.realms);
+        populateRealms(data.realms);
+        if (data.region === inputRegion.value) showRealmSuggestions(realmInput.value);
       }
     } catch (e) {
       console.error('from-python parse error:', e);
