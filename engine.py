@@ -149,17 +149,38 @@ def fetch_realms(region: str, token: str) -> list[str]:
 
 def _build_character(data: dict, region: str, realm: str, name: str, token: str) -> "Character":
     """Assemble a Character from a raw Blizzard profile response."""
-    cls   = data.get("character_class", {})
-    spec  = data.get("active_spec", {})
-    media = fetch_character_media(region, realm, name, token)
+    cls      = data.get("character_class", {})
+    spec     = data.get("active_spec", {})
+    media    = fetch_character_media(region, realm, name, token)
+    avg_ilvl = data.get("average_item_level", 0)
+    
+    # Map class and spec to WoWHead slugs for talent backgrounds
+    class_slug = _get_class_slug(cls.get("id"))
+    spec_slug  = _get_spec_slug(spec.get("name", ""))
+    
     return Character(
         name, data.get("level", "?"), realm, region,
-        portrait_url = media.get("render"),  # full armory scene (character + class bg)
+        portrait_url = media.get("render"),
         avatar_url   = media.get("avatar"),
         class_id     = cls.get("id"),
         class_name   = cls.get("name", ""),
         spec_name    = spec.get("name", ""),
+        class_slug   = class_slug,
+        spec_slug    = spec_slug,
+        item_level   = avg_ilvl,
     )
+
+def _get_class_slug(class_id):
+    """Map Blizzard class ID to WoWHead slug."""
+    return {
+        1: "warrior", 2: "paladin", 3: "hunter", 4: "rogue",
+        5: "priest", 6: "death-knight", 7: "shaman", 8: "mage",
+        9: "warlock", 10: "monk", 11: "druid", 12: "demon-hunter", 13: "evoker"
+    }.get(class_id, "warrior")
+
+def _get_spec_slug(spec_name):
+    """Convert spec name to WoWHead slug."""
+    return spec_name.lower().replace(" ", "-") if spec_name else ""
 
 def auto_add_character(region: str, name: str) -> "Character | None":
     """Scan every realm in the region until the character is found."""
@@ -181,18 +202,22 @@ def auto_add_character(region: str, name: str) -> "Character | None":
 class Character:
     def __init__(self, name, level, realm, region="eu",
                  portrait_url=None, avatar_url=None,
-                 class_id=None, class_name="", spec_name=""):
+                 class_id=None, class_name="", spec_name="",
+                 class_slug="", spec_slug="", item_level=0):
         self.name         = name
         self.level        = level
         self.realm        = realm
         self.region       = region
-        self.portrait_url = portrait_url   # full armory scene (class bg + character)
-        self.avatar_url   = avatar_url     # small bust portrait
+        self.portrait_url = portrait_url
+        self.avatar_url   = avatar_url
         self.class_id     = class_id
         self.class_name   = class_name
         self.spec_name    = spec_name
-        self.equipment    = []             # cached equipment data
-        self.equipment_last_check = None   # datetime of last equipment fetch
+        self.class_slug   = class_slug
+        self.spec_slug    = spec_slug
+        self.item_level   = item_level
+        self.equipment    = []
+        self.equipment_last_check = None
         self.activities   = {
             "Raid":         {"status": "available", "reset": "weekly"},
             "Mythic+":      {"status": "available", "reset": "weekly"},
@@ -247,6 +272,9 @@ class Character:
             "class_id":              self.class_id,
             "class_name":            self.class_name,
             "spec_name":             self.spec_name,
+            "class_slug":            self.class_slug,
+            "spec_slug":             self.spec_slug,
+            "item_level":            self.item_level,
             "equipment":             self.equipment,
             "equipment_last_check":  self.equipment_last_check.isoformat() if self.equipment_last_check else None,
             "activities":            self.activities,
@@ -263,6 +291,9 @@ class Character:
             class_id     = d.get("class_id"),
             class_name   = d.get("class_name", ""),
             spec_name    = d.get("spec_name", ""),
+            class_slug   = d.get("class_slug", ""),
+            spec_slug    = d.get("spec_slug", ""),
+            item_level   = d.get("item_level", 0),
         )
         char.equipment       = d.get("equipment", [])
         char.equipment_last_check = datetime.fromisoformat(d["equipment_last_check"]) if d.get("equipment_last_check") else None
