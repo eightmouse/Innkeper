@@ -155,6 +155,10 @@
               <div class="loading-spinner"></div>
               <div class="loading-text">Loading gear…</div>
             </div>
+            <div class="equip-refresh-indicator" id="equip-refresh-indicator">
+              <div class="refresh-spinner"></div>
+              <div class="refresh-text">Checking for changes…</div>
+            </div>
           </div>
 
           <!-- Right equipment column -->
@@ -279,10 +283,10 @@ function renderGrid() {
 
     const [gradient, symbol] = CLASS_BG[char.class_id] || ['radial-gradient(ellipse at 50% 110%, #0c1a10 0%, #060e08 100%)', '🧙'];
 
-    // portrait_url is the Blizzard 'main' asset — the full armory scene with class background
+    // portrait_url is now the 'render' asset — full armory scene with class background
     const hasBg    = !!char.portrait_url;
     const bgStyle  = hasBg
-      ? `background-image:url('${char.portrait_url}');background-size:cover;background-position:center 15%;`
+      ? `background-image:url('${char.portrait_url}');`
       : `background:${gradient};`;
 
     const specLine = (char.class_name || char.spec_name)
@@ -333,12 +337,9 @@ function openDetail(idx) {
   // Header avatar
   const avatarEl = document.getElementById('detail-avatar');
   if (char.avatar_url) {
-    avatarEl.style.backgroundImage    = `url('${char.avatar_url}')`;
-    avatarEl.style.backgroundSize     = 'cover';
-    avatarEl.style.backgroundPosition = 'center top';
+    avatarEl.style.backgroundImage = `url('${char.avatar_url}')`;
   } else {
     avatarEl.style.backgroundImage = gradient;
-    avatarEl.style.backgroundSize  = '';
   }
 
   document.getElementById('detail-name').textContent = `${char.name}`;
@@ -348,15 +349,11 @@ function openDetail(idx) {
   // Portrait center with class bg behind it
   const portrait = document.getElementById('armory-portrait');
   if (char.portrait_url) {
-    portrait.style.backgroundImage    = `url('${char.portrait_url}')`;
-    portrait.style.backgroundSize     = 'contain';
-    portrait.style.backgroundRepeat   = 'no-repeat';
-    portrait.style.backgroundPosition = 'center bottom';
+    portrait.style.backgroundImage = `url('${char.portrait_url}')`;
   } else {
     portrait.style.backgroundImage = gradient;
-    portrait.style.backgroundSize  = '';
   }
-  // Tint the portrait bg with the class gradient behind it
+  // Set the class gradient CSS variable for the ::before vignette
   portrait.style.setProperty('--class-grad', gradient);
 
   // Activities
@@ -423,6 +420,14 @@ function renderEquipment(items) {
 
   renderEquipCol(document.getElementById('equip-left'),  EQUIP_LEFT,  bySlot, 'left');
   renderEquipCol(document.getElementById('equip-right'), EQUIP_RIGHT, bySlot, 'right');
+}
+
+function showEquipmentRefreshing() {
+  const indicator = document.getElementById('equip-refresh-indicator');
+  if (indicator) {
+    indicator.style.display = 'flex';
+    setTimeout(() => { indicator.style.display = 'none'; }, 3000);
+  }
 }
 
 function renderEquipCol(container, slots, bySlot, side) {
@@ -613,6 +618,8 @@ if (ipcRenderer) {
         if (data.region === inputRegion.value) showRealmSuggestions(realmInput.value);
       } else if (data.status === 'equipment') {
         renderEquipment(data.items);
+      } else if (data.status === 'equipment_refreshing') {
+        showEquipmentRefreshing();
       }
     } catch (e) {
       console.error('from-python parse error:', e);
