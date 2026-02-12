@@ -74,8 +74,11 @@ def fetch_character(region: str, realm: str, name: str, token: str) -> dict | No
 
 def fetch_character_media(region: str, realm: str, name: str, token: str) -> dict:
     """
-    Returns { 'main': <full armory scene URL>, 'avatar': <bust portrait URL> }.
-    'main' is the class-background + character composite used by the Armory.
+    Returns { 'render': <full scene URL>, 'avatar': <bust portrait URL> }.
+    The character-media endpoint includes:
+    - 'render' (if available): full Armory scene with class background
+    - 'main-raw' or 'main': character cutout with class background
+    - 'avatar': small bust portrait
     """
     r = requests.get(
         f"https://{region}.api.blizzard.com/profile/wow/character/{_slug(realm)}/{name.lower()}/character-media",
@@ -86,10 +89,10 @@ def fetch_character_media(region: str, realm: str, name: str, token: str) -> dic
         return {}
     assets = {a["key"]: a["value"] for a in r.json().get("assets", [])}
     result = {}
-    # 'main' is the full armory scene (character + class background)
-    for key in ("main", "main-raw"):
+    # Priority: render > main-raw > main (render is the full armory scene)
+    for key in ("render", "main-raw", "main"):
         if key in assets:
-            result["main"] = assets[key]
+            result["render"] = assets[key]
             break
     if "avatar" in assets:
         result["avatar"] = assets["avatar"]
@@ -151,7 +154,7 @@ def _build_character(data: dict, region: str, realm: str, name: str, token: str)
     media = fetch_character_media(region, realm, name, token)
     return Character(
         name, data.get("level", "?"), realm, region,
-        portrait_url = media.get("main"),    # full armory scene (character + class bg)
+        portrait_url = media.get("render"),  # full armory scene (character + class bg)
         avatar_url   = media.get("avatar"),
         class_id     = cls.get("id"),
         class_name   = cls.get("name", ""),
@@ -188,6 +191,8 @@ class Character:
         self.class_id     = class_id
         self.class_name   = class_name
         self.spec_name    = spec_name
+        self.equipment    = []             # cached equipment data
+        self.equipment_last_check = None   # datetime of last equipment fetch
         self.activities   = {
             "Raid":         {"status": "available", "reset": "weekly"},
             "Mythic+":      {"status": "available", "reset": "weekly"},
@@ -233,17 +238,19 @@ class Character:
 
     def to_dict(self) -> dict:
         return {
-            "name":             self.name,
-            "level":            self.level,
-            "realm":            self.realm,
-            "region":           self.region,
-            "portrait_url":     self.portrait_url,
-            "avatar_url":       self.avatar_url,
-            "class_id":         self.class_id,
-            "class_name":       self.class_name,
-            "spec_name":        self.spec_name,
-            "activities":       self.activities,
-            "last_reset_check": self.last_reset_check.isoformat(),
+            "name":                  self.name,
+            "level":                 self.level,
+            "realm":                 self.realm,
+            "region":                self.region,
+            "portrait_url":          self.portrait_url,
+            "avatar_url":            self.avatar_url,
+            "class_id":              self.class_id,
+            "class_name":            self.class_name,
+            "spec_name":             self.spec_name,
+            "equipment":             self.equipment,
+            "equipment_last_check":  self.equipment_last_check.isoformat() if self.equipment_last_check else None,
+            "activities":            self.activities,
+            "last_reset_check":      self.last_reset_check.isoformat(),
         }
 
     @staticmethod
@@ -257,6 +264,8 @@ class Character:
             class_name   = d.get("class_name", ""),
             spec_name    = d.get("spec_name", ""),
         )
+        char.equipment       = d.get("equipment", [])
+        char.equipment_last_check = datetime.fromisoformat(d["equipment_last_check"]) if d.get("equipment_last_check") else None
         char.activities       = d["activities"]
         char.last_reset_check = datetime.fromisoformat(
             d.get("last_reset_check", datetime.now(UTC).isoformat()))
@@ -352,10 +361,52 @@ def main():
             parts = command.split(":", 3)
             if len(parts) == 4:
                 _, region, realm, name = [p.strip() for p in parts]
+                char = find_character(characters, name, realm)
+                if char and char.equipment and char.equipment_last_check:
+                    # Return cached equipment immediately
+                    emit({"status": "equipment", "name": name, "realm": realm,
+                          "items": char.equipment, "cached": True})
+                    # Check if cache is older than 5 minutes — if so, refresh in background
+                    age = (datetime.now(UTC) - char.equipment_last_check).total_seconds()
+                    if age > 300:  # 5 minutes
+                        emit({"status": "equipment_refreshing", "name": name, "realm": realm})
+                        token = get_access_token(region)
+                        if token:
+                            items = fetch_equipment(region, realm, name, token)
+                            char.equipment = items
+                            char.equipment_last_check = datetime.now(UTC)
+                            save_data(characters)
+                            emit({"status": "equipment", "name": name, "realm": realm,
+                                  "items": items, "cached": False})
+                else:
+                    # No cache — fetch fresh
+                    token = get_access_token(region)
+                    if token:
+                        items = fetch_equipment(region, realm, name, token)
+                        if char:
+                            char.equipment = items
+                            char.equipment_last_check = datetime.now(UTC)
+                            save_data(characters)
+                        emit({"status": "equipment", "name": name, "realm": realm,
+                              "items": items, "cached": False})
+                    else:
+                        emit({"status": "error", "message": "Could not authenticate"})
+
+        elif command.startswith("REFRESH_EQUIPMENT:"):
+            parts = command.split(":", 3)
+            if len(parts) == 4:
+                _, region, realm, name = [p.strip() for p in parts]
+                char = find_character(characters, name, realm)
                 token = get_access_token(region)
                 if token:
+                    emit({"status": "equipment_refreshing", "name": name, "realm": realm})
                     items = fetch_equipment(region, realm, name, token)
-                    emit({"status": "equipment", "name": name, "realm": realm, "items": items})
+                    if char:
+                        char.equipment = items
+                        char.equipment_last_check = datetime.now(UTC)
+                        save_data(characters)
+                    emit({"status": "equipment", "name": name, "realm": realm,
+                          "items": items, "cached": False})
                 else:
                     emit({"status": "error", "message": "Could not authenticate"})
 
