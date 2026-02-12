@@ -90,7 +90,7 @@
   <div class="modal">
     <h2>About Innkeeper</h2>
     <div class="info-body">
-      <p class="info-line">Track your WoW characters' weekly and daily activities across realms.</p>
+      <p class="info-line">A World of Warcraft app to keep track of your characters</p>
       <div class="info-divider"></div>
       <div class="info-row"><span class="info-label">Author</span><span class="info-value">Eightmouse</span></div>
       <div class="info-row">
@@ -101,6 +101,25 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="info-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settings Modal ──────────────────────────── -->
+<div id="settings-modal" class="modal-overlay">
+  <div class="modal">
+    <h2>Settings</h2>
+    <div class="settings-body">
+      <div class="setting-row">
+        <div class="setting-label">Theme</div>
+        <div class="theme-buttons">
+          <button class="theme-btn active" data-theme="dark">Dark</button>
+          <button class="theme-btn" data-theme="light">Light</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="settings-close">Close</button>
     </div>
   </div>
 </div>
@@ -283,11 +302,21 @@ function renderGrid() {
 
     const [gradient, symbol] = CLASS_BG[char.class_id] || ['radial-gradient(ellipse at 50% 110%, #0c1a10 0%, #060e08 100%)', '🧙'];
 
-    // portrait_url is now the 'render' asset — full armory scene with class background
-    const hasBg    = !!char.portrait_url;
-    const bgStyle  = hasBg
-      ? `background-image:url('${char.portrait_url}');`
-      : `background:${gradient};`;
+    // WoWHead talent background + character render layered
+    const hasRender = !!char.portrait_url;
+    const hasBg     = char.class_slug && char.spec_slug;
+    
+    let bgStyle = '';
+    if (hasBg) {
+      const talentBg = `https://wow.zamimg.com/images/tools/dragonflight-talent-calc/blizzard/talentbg-${char.class_slug}-${char.spec_slug}.jpg`;
+      bgStyle = hasRender
+        ? `background: url('${talentBg}') center/cover, url('${char.portrait_url}') center 18%/160% no-repeat;`
+        : `background: url('${talentBg}') center/cover;`;
+    } else if (hasRender) {
+      bgStyle = `background-image:url('${char.portrait_url}');`;
+    } else {
+      bgStyle = `background:${gradient};`;
+    }
 
     const specLine = (char.class_name || char.spec_name)
       ? `<div class="card-spec">${[char.spec_name, char.class_name].filter(Boolean).join(' · ')}</div>`
@@ -299,7 +328,7 @@ function renderGrid() {
 
     card.innerHTML = `
       <div class="card-bg" style="${bgStyle}">
-        ${!hasBg ? `<div class="class-symbol">${symbol}</div>` : ''}
+        ${!hasBg && !hasRender ? `<div class="class-symbol">${symbol}</div>` : ''}
       </div>
       <button class="card-close" title="Remove">
         <svg viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -342,18 +371,28 @@ function openDetail(idx) {
     avatarEl.style.backgroundImage = gradient;
   }
 
-  document.getElementById('detail-name').textContent = `${char.name}`;
+  // Header text with item level
+  const ilvlText = char.item_level ? ` · ilvl ${char.item_level}` : '';
+  document.getElementById('detail-name').textContent = `${char.name}${ilvlText}`;
   const subParts = [char.realm, char.class_name, char.spec_name].filter(Boolean);
   document.getElementById('detail-sub').textContent  = subParts.join(' · ');
 
-  // Portrait center with class bg behind it
+  // Armory portrait with WoWHead talent background
   const portrait = document.getElementById('armory-portrait');
-  if (char.portrait_url) {
+  const hasBg    = char.class_slug && char.spec_slug;
+  
+  if (hasBg) {
+    const talentBg = `https://wow.zamimg.com/images/tools/dragonflight-talent-calc/blizzard/talentbg-${char.class_slug}-${char.spec_slug}.jpg`;
+    if (char.portrait_url) {
+      portrait.style.background = `url('${talentBg}') center/cover, url('${char.portrait_url}') center bottom/200% no-repeat`;
+    } else {
+      portrait.style.background = `url('${talentBg}') center/cover`;
+    }
+  } else if (char.portrait_url) {
     portrait.style.backgroundImage = `url('${char.portrait_url}')`;
   } else {
     portrait.style.backgroundImage = gradient;
   }
-  // Set the class gradient CSS variable for the ::before vignette
   portrait.style.setProperty('--class-grad', gradient);
 
   // Activities
@@ -581,9 +620,19 @@ document.getElementById('detail-overlay').addEventListener('click', e => {
 });
 
 document.getElementById('menu-info').addEventListener('click', () => document.getElementById('info-modal').classList.add('open'));
+document.getElementById('menu-settings').addEventListener('click', () => document.getElementById('settings-modal').classList.add('open'));
+
 document.getElementById('info-close').addEventListener('click', () => document.getElementById('info-modal').classList.remove('open'));
+document.getElementById('settings-close').addEventListener('click', () => document.getElementById('settings-modal').classList.remove('open'));
+
 document.getElementById('info-modal').addEventListener('click', e => {
-  if (e.target === document.getElementById('info-modal')) document.getElementById('info-modal').classList.remove('open');
+  if (e.target === document.getElementById('info-modal'))
+    document.getElementById('info-modal').classList.remove('open');
+});
+
+document.getElementById('settings-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('settings-modal'))
+    document.getElementById('settings-modal').classList.remove('open');
 });
 
 document.getElementById('github-link').addEventListener('click', e => {
@@ -591,6 +640,27 @@ document.getElementById('github-link').addEventListener('click', e => {
   if (ipcRenderer) ipcRenderer.send('open-external', e.currentTarget.href);
   else window.open(e.currentTarget.href, '_blank');
 });
+
+// Theme toggle
+const applyTheme = (theme) => {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === theme);
+  });
+  try {
+    localStorage.setItem('innkeeper-theme', theme);
+  } catch (e) {}
+};
+
+document.querySelectorAll('.theme-btn').forEach(btn => {
+  btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
+});
+
+// Load saved theme
+try {
+  const saved = localStorage.getItem('innkeeper-theme');
+  if (saved) applyTheme(saved);
+} catch (e) {}
 
 // ── Electron IPC ──────────────────────────────────
 
