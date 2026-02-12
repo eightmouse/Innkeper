@@ -17,6 +17,7 @@ It's a minimal and simple World of Warcraft tracker to check basic informations 
 - Character Equipment
 - More coming ~
 
+## App
 <img width="1103" height="761" alt="Screenshot 2026-02-12 170846" src="https://github.com/user-attachments/assets/fe49f26e-bed5-4fcc-8609-0bb23284f9ed" />
 <img width="1102" height="763" alt="Screenshot 2026-02-12 170859" src="https://github.com/user-attachments/assets/452fef18-8acd-4bd1-a36f-7b43e2454bdc" />
 
