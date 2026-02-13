@@ -309,6 +309,108 @@ def find_character(characters, name, realm):
     return next((c for c in characters if c.name.lower() == n and c.realm.lower() == r), None)
 
 
+
+# ------------[  HELPER FUNCTION   ]------------ #
+
+# ------------[  TALENT SCRAPING  ]------------ #
+
+SPECS_MAP = {
+    'warrior': ['arms', 'fury', 'protection'],
+    'paladin': ['holy', 'protection', 'retribution'],
+    'hunter': ['beast-mastery', 'marksmanship', 'survival'],
+    'rogue': ['assassination', 'outlaw', 'subtlety'],
+    'priest': ['discipline', 'holy', 'shadow'],
+    'death-knight': ['blood', 'frost', 'unholy'],
+    'shaman': ['elemental', 'enhancement', 'restoration'],
+    'mage': ['arcane', 'fire', 'frost'],
+    'warlock': ['affliction', 'demonology', 'destruction'],
+    'monk': ['brewmaster', 'mistweaver', 'windwalker'],
+    'druid': ['balance', 'feral', 'guardian', 'restoration'],
+    'demon-hunter': ['havoc', 'vengeance'],
+    'evoker': ['devastation', 'preservation', 'augmentation']
+}
+
+def scrape_talent_builds(class_slug, spec_slug):
+    """Scrape talent builds from WoWHead guide page."""
+    import re
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        return {}
+    
+    url = f"https://www.wowhead.com/guide/classes/{class_slug}/{spec_slug}/midnight-pre-patch"
+    
+    try:
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        builds = {}
+        links = soup.find_all('a', href=re.compile(r'/talent-calc/'))
+        
+        for link in links:
+            href = link.get('href')
+            text = link.get_text(strip=True).lower()
+            parent_text = link.parent.get_text(strip=True).lower() if link.parent else ""
+            
+            embed_url = f"https://www.wowhead.com{href}".replace('/talent-calc/', '/talent-calc/embed/')
+            
+            if 'raid' in text or 'raid' in parent_text:
+                builds['raid'] = embed_url
+            elif 'mythic' in text or 'm+' in text or 'mythic' in parent_text:
+                builds['mythic'] = embed_url
+            elif 'delve' in text or 'delve' in parent_text:
+                builds['delves'] = embed_url
+        
+        return builds
+    except Exception as e:
+        print(f"Error scraping {class_slug}/{spec_slug}: {e}", file=sys.stderr)
+        return {}
+
+def scrape_all_talents():
+    """Scrape all talent builds for all classes/specs."""
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        return {"status": "error", "message": "BeautifulSoup not installed. Run: pip install beautifulsoup4"}
+    
+    talent_map = {}
+    total = sum(len(specs) for specs in SPECS_MAP.values())
+    progress = 0
+    
+    for class_slug, specs in SPECS_MAP.items():
+        talent_map[class_slug] = {}
+        
+        for spec_slug in specs:
+            progress += 1
+            print(f"[{progress}/{total}] Scraping {class_slug}/{spec_slug}...", file=sys.stderr)
+            
+            builds = scrape_talent_builds(class_slug, spec_slug)
+            
+            if builds:
+                talent_map[class_slug][spec_slug] = builds
+            else:
+                # Fallback to base URL
+                base = f"https://www.wowhead.com/talent-calc/embed/{class_slug}/{spec_slug}"
+                talent_map[class_slug][spec_slug] = {'raid': base, 'mythic': base, 'delves': base}
+            
+            time.sleep(0.5)
+    
+    # Save to file
+    talents_file = os.path.join(basedir, 'talent_builds.json')
+    with open(talents_file, 'w') as f:
+        json.dump(talent_map, f, indent=2)
+    
+    return {
+        "status": "success",
+        "message": f"Scraped {progress} specs",
+        "builds": talent_map,
+        "file": talents_file
+    }
+
+
+# ------------[    MAIN LOOP       ]------------ #
+
 def main():
     emit({"status": "ready"})
 
@@ -393,35 +495,25 @@ def main():
             if len(parts) == 4:
                 _, region, realm, name = [p.strip() for p in parts]
                 char = find_character(characters, name, realm)
+                
                 if char and char.equipment and char.equipment_last_check:
-                    # Return cached equipment immediately
-                    emit({"status": "equipment", "name": name, "realm": realm,
-                          "items": char.equipment, "cached": True})
-                    # Check if cache is older than 5 minutes — if so, refresh in background
-                    age = (datetime.now(UTC) - char.equipment_last_check).total_seconds()
-                    if age > 300:  # 5 minutes
-                        emit({"status": "equipment_refreshing", "name": name, "realm": realm})
-                        token = get_access_token(region)
-                        if token:
-                            items = fetch_equipment(region, realm, name, token)
-                            char.equipment = items
-                            char.equipment_last_check = datetime.now(UTC)
-                            save_data(characters)
-                            emit({"status": "equipment", "name": name, "realm": realm,
-                                  "items": items, "cached": False})
-                else:
-                    # No cache — fetch fresh
-                    token = get_access_token(region)
-                    if token:
-                        items = fetch_equipment(region, realm, name, token)
-                        if char:
-                            char.equipment = items
-                            char.equipment_last_check = datetime.now(UTC)
-                            save_data(characters)
+                    cache_age = (datetime.now(UTC) - char.equipment_last_check).total_seconds()
+                    if cache_age < 300:
                         emit({"status": "equipment", "name": name, "realm": realm,
-                              "items": items, "cached": False})
-                    else:
-                        emit({"status": "error", "message": "Could not authenticate"})
+                              "items": char.equipment, "cached": True})
+                        continue
+                
+                token = get_access_token(region)
+                if token:
+                    items = fetch_equipment(region, realm, name, token)
+                    if char and items:
+                        char.equipment = items
+                        char.equipment_last_check = datetime.now(UTC)
+                        save_data(characters)
+                    emit({"status": "equipment", "name": name, "realm": realm,
+                          "items": items, "cached": False})
+                else:
+                    emit({"status": "error", "message": "Could not authenticate"})
 
         elif command.startswith("REFRESH_EQUIPMENT:"):
             parts = command.split(":", 3)
@@ -440,6 +532,10 @@ def main():
                           "items": items, "cached": False})
                 else:
                     emit({"status": "error", "message": "Could not authenticate"})
+
+        elif command == "SCRAPE_TALENTS":
+            result = scrape_all_talents()
+            emit(result)
 
         elif command == "EXIT":
             save_data(characters)
