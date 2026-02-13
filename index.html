@@ -117,6 +117,13 @@
           <button class="theme-btn" data-theme="light">Light</button>
         </div>
       </div>
+      <div class="setting-row">
+        <div class="setting-label">Talent Builds</div>
+        <div class="theme-buttons">
+          <button id="update-talents-btn" class="btn">Update All Builds</button>
+        </div>
+      </div>
+      <div id="talent-update-status" style="font-size:10px;margin-top:8px;color:var(--text-muted);"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="settings-close">Close</button>
@@ -146,6 +153,7 @@
       <button class="detail-tab" data-tab="talents">Talents</button>
       <button class="detail-tab" data-tab="vault">Vault</button>
       <button class="detail-tab" data-tab="professions">Professions</button>
+      <div class="tab-spacer"></div>
     </div>
 
     <!-- Body: tab content panels -->
@@ -519,70 +527,152 @@ const talentCache = {};
 // Talent build mapping - will be loaded from talent_builds.json
 let TALENT_BUILDS = {};
 let talentsLoaded = false;
+let scrapingInProgress = false;
 
-// Load talent builds from file or scrape if missing
+// Load talent builds from file or trigger scraping
 async function loadTalentBuilds() {
+  console.log('[Talents] Attempting to load talent_builds.json...');
+  
   try {
     const response = await fetch('./talent_builds.json');
+    console.log('[Talents] Fetch response status:', response.status);
+    
     if (response.ok) {
-      TALENT_BUILDS = await response.json();
-      console.log('Loaded talent builds for', Object.keys(TALENT_BUILDS).length, 'classes');
+      const data = await response.json();
+      TALENT_BUILDS = data;
+      console.log('✓ Loaded talent builds for', Object.keys(TALENT_BUILDS).length, 'classes');
       talentsLoaded = true;
       return true;
+    } else {
+      // File doesn't exist (404) - show scraping notice
+      console.log('[Talents] File not found (404) - showing setup modal');
+      setTimeout(() => showTalentScrapingNotice(), 500);
+      return false;
     }
   } catch (e) {
-    console.log('No talent_builds.json found - will scrape on demand');
+    // Network error or other issue
+    console.log('[Talents] Error loading:', e);
+    setTimeout(() => showTalentScrapingNotice(), 500);
+    return false;
   }
-  
-  // File doesn't exist - trigger automatic scraping
-  await scrapeTalentsFirstLaunch();
-  return false;
 }
 
-// Auto-scrape talents on first launch
-async function scrapeTalentsFirstLaunch() {
-  // Show loading modal
+// Show notice about talent scraping with manual trigger
+function showTalentScrapingNotice() {
+  console.log('[Talents] Showing scraping notice modal');
+  
+  // Remove any existing modal
+  const existing = document.querySelector('.talent-setup-modal');
+  if (existing) existing.remove();
+  
   const modal = document.createElement('div');
-  modal.className = 'modal';
+  modal.className = 'modal talent-setup-modal';
   modal.style.display = 'flex';
+  modal.style.zIndex = '999';
   modal.innerHTML = `
-    <div class="modal-content" style="max-width:400px;text-align:center;">
-      <h3>First Launch Setup</h3>
-      <p style="margin:16px 0;">Fetching talent builds from WoWHead...</p>
-      <div class="loading-spinner" style="margin:20px auto;"></div>
-      <p id="scrape-progress" style="font-size:11px;color:var(--text-muted);">This may take 1-2 minutes</p>
+    <div class="modal-content" style="max-width:450px;text-align:center;">
+      <h3>🎯 Talent Builds Setup</h3>
+      <p style="margin:16px 0 24px;">This is your first launch! Click below to fetch talent builds from WoWHead for all classes and specs.</p>
+      <button id="start-scrape-btn" class="btn" style="padding:12px 32px;font-size:13px;">
+        Fetch Talent Builds
+      </button>
+      <p style="font-size:10px;color:var(--text-muted);margin-top:16px;">
+        This will take 1-2 minutes and only needs to be done once.
+      </p>
     </div>
   `;
   document.body.appendChild(modal);
+  console.log('[Talents] Modal added to DOM');
   
-  // Trigger backend scraping
-  ipcRenderer.send('command', {command: 'SCRAPE_TALENTS'});
-  
-  // Wait for result
-  return new Promise((resolve) => {
-    const handler = (event, data) => {
-      if (data.status === 'success' && data.builds) {
-        TALENT_BUILDS = data.builds;
-        talentsLoaded = true;
-        document.body.removeChild(modal);
-        showToast('Talent builds loaded successfully!');
-        ipcRenderer.removeListener('response', handler);
-        resolve(true);
-      } else if (data.status === 'error') {
-        document.getElementById('scrape-progress').textContent = 'Error: ' + (data.message || 'Failed to scrape');
-        setTimeout(() => {
-          document.body.removeChild(modal);
-          ipcRenderer.removeListener('response', handler);
-          resolve(false);
-        }, 2000);
-      }
-    };
-    ipcRenderer.on('response', handler);
+  document.getElementById('start-scrape-btn').addEventListener('click', () => {
+    console.log('[Talents] Fetch button clicked');
+    startTalentScraping(modal);
   });
 }
 
+// Start the scraping process
+function startTalentScraping(modal) {
+  if (scrapingInProgress) return;
+  scrapingInProgress = true;
+  
+  // Update modal to show progress
+  modal.querySelector('.modal-content').innerHTML = `
+    <h3>Fetching Talent Builds</h3>
+    <p style="margin:16px 0;">Generating talent embed data...</p>
+    <div class="loading-spinner" style="margin:20px auto;"></div>
+    <p id="scrape-progress" style="font-size:11px;color:var(--text-muted);margin-top:16px;">
+      Starting...
+    </p>
+  `;
+  
+  // Send command via the correct IPC channel
+  console.log('Sending SCRAPE_TALENTS command via to-python channel...');
+  sendToPython('SCRAPE_TALENTS');
+  
+  // Set up response handler on the correct channel
+  const handleScrapeResponse = (event, raw) => {
+    try {
+      const data = JSON.parse(raw);
+      console.log('Received scrape response:', data);
+    
+      if (data.status === 'success' && data.builds) {
+        TALENT_BUILDS = data.builds;
+        talentsLoaded = true;
+        scrapingInProgress = false;
+      
+        modal.querySelector('.modal-content').innerHTML = `
+          <h3>✓ Complete!</h3>
+          <p style="margin:16px 0;color:var(--accent);">
+            Successfully loaded ${Object.keys(data.builds).length} classes
+          </p>
+          <button class="btn" onclick="this.closest('.modal').remove()">Done</button>
+        `;
+      
+        setTimeout(() => {
+          if (modal.parentNode) document.body.removeChild(modal);
+          showToast('Talent builds ready!');
+        }, 1500);
+      
+        ipcRenderer.removeListener('from-python', handleScrapeResponse);
+      } 
+      else if (data.status === 'error') {
+        scrapingInProgress = false;
+        const prog = document.getElementById('scrape-progress');
+        if (prog) {
+          prog.textContent = 'Error: ' + (data.message || 'Failed');
+          prog.style.color = '#c42b2b';
+        }
+      
+        setTimeout(() => {
+          if (modal.parentNode) document.body.removeChild(modal);
+        }, 3000);
+      
+        ipcRenderer.removeListener('from-python', handleScrapeResponse);
+      }
+    } catch {}
+  };
+  
+  ipcRenderer.on('from-python', handleScrapeResponse);
+  
+  // Timeout fallback
+  setTimeout(() => {
+    if (scrapingInProgress) {
+      scrapingInProgress = false;
+      if (document.getElementById('scrape-progress')) {
+        document.getElementById('scrape-progress').textContent = 'Timed out. You can try again from Settings.';
+        document.getElementById('scrape-progress').style.color = '#c42b2b';
+      }
+    }
+  }, 120000); // 2 minute timeout
+}
+
 // Initialize talent builds on startup
-loadTalentBuilds();
+console.log('[Innkeeper] Starting talent build initialization...');
+loadTalentBuilds().then(success => {
+  console.log('[Innkeeper] Talent build loading complete. Success:', success);
+  console.log('[Innkeeper] TALENT_BUILDS keys:', Object.keys(TALENT_BUILDS));
+  console.log('[Innkeeper] talentsLoaded:', talentsLoaded);
+});
 
 function getTalentBuildUrl(classSlug, specSlug, buildType) {
   // Try to get specific build from mapping
@@ -593,7 +683,7 @@ function getTalentBuildUrl(classSlug, specSlug, buildType) {
     // Fall through to default
   }
   
-  // Fallback to base embed URL
+  // Fallback to base embed URL (always works, shows interactive talent tree)
   return `https://www.wowhead.com/talent-calc/embed/${classSlug}/${specSlug}`;
 }
 
@@ -675,46 +765,39 @@ function loadTalentEmbed(url) {
   }
   
   // Show loading indicator
-  container.innerHTML = '<div class="vault-placeholder">Loading talent tree...</div>';
+  container.innerHTML = '<div class="vault-placeholder"><div class="loading-spinner" style="margin:0 auto 12px;"></div>Loading talent tree...</div>';
   
-  // Create iframe with sandbox to prevent navigation
-  // allow-same-origin: needed for rendering
-  // allow-scripts: needed for WoWHead functionality
-  // allow-popups: allows external links but blocks navigation
-  const iframe = `<iframe src="${url}" 
-                          frameborder="0" 
-                          sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe>`;
+  // Create iframe — allow scripts and same-origin for WoWHead interactivity
+  const iframe = document.createElement('iframe');
+  iframe.src = url;
+  iframe.frameBorder = '0';
+  iframe.scrolling = 'no';
+  iframe.style.cssText = 'width:100%;height:100%;border:none;position:absolute;top:0;left:0;';
+  iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms');
   
-  // Cache and display
-  talentCache[url] = iframe;
-  container.innerHTML = iframe;
+  // Error handling — if iframe fails to load after timeout, show fallback
+  let loaded = false;
+  iframe.addEventListener('load', () => {
+    loaded = true;
+    // Cache the working HTML
+    talentCache[url] = container.innerHTML;
+  });
   
-  // Listen for iframe trying to navigate - redirect to external browser
+  // Timeout fallback
   setTimeout(() => {
-    const iframeEl = container.querySelector('iframe');
-    if (iframeEl) {
-      iframeEl.addEventListener('load', () => {
-        try {
-          // Inject script to intercept WoWHead links
-          const doc = iframeEl.contentDocument || iframeEl.contentWindow.document;
-          const script = doc.createElement('script');
-          script.textContent = `
-            document.addEventListener('click', function(e) {
-              const link = e.target.closest('a');
-              if (link && link.href && !link.href.includes('/talent-calc/embed/')) {
-                e.preventDefault();
-                window.parent.postMessage({type: 'open-external', url: link.href}, '*');
-              }
-            }, true);
-          `;
-          doc.head.appendChild(script);
-        } catch (e) {
-          // Cross-origin restriction - can't inject script
-          // Sandbox will still prevent navigation
-        }
-      });
+    if (!loaded && container.querySelector('iframe')) {
+      // iframe is still loading or blocked — keep it (it may still render)
+      // but add a note
+      const note = document.createElement('div');
+      note.style.cssText = 'position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--text-muted);background:rgba(0,0,0,0.7);padding:4px 12px;border-radius:10px;z-index:5;pointer-events:none;';
+      note.textContent = 'If the tree doesn\'t load, use the WoWHead link in the sidebar';
+      container.appendChild(note);
+      setTimeout(() => note.remove(), 5000);
     }
-  }, 100);
+  }, 8000);
+  
+  container.innerHTML = '';
+  container.appendChild(iframe);
 }
 
 // Listen for external link requests from iframe
@@ -949,6 +1032,47 @@ document.getElementById('menu-settings').addEventListener('click', () => documen
 
 document.getElementById('info-close').addEventListener('click', () => document.getElementById('info-modal').classList.remove('open'));
 document.getElementById('settings-close').addEventListener('click', () => document.getElementById('settings-modal').classList.remove('open'));
+
+// Manual talent update button
+document.getElementById('update-talents-btn').addEventListener('click', () => {
+  const btn = document.getElementById('update-talents-btn');
+  const status = document.getElementById('talent-update-status');
+  
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+  status.textContent = 'Fetching talent builds via Blizzard API + WoWHead embeds…';
+  status.style.color = 'var(--text-muted)';
+  
+  console.log('[Talents] Manual update triggered');
+  sendToPython('SCRAPE_TALENTS');
+  
+  const handler = (event, raw) => {
+    try {
+      const data = JSON.parse(raw);
+      console.log('[Talents] Received response:', data);
+      
+      if (data.status === 'success' && data.builds) {
+        TALENT_BUILDS = data.builds;
+        talentsLoaded = true;
+        btn.disabled = false;
+        btn.textContent = 'Update All Builds';
+        status.textContent = `✓ Successfully loaded ${Object.keys(data.builds).length} classes!`;
+        status.style.color = 'var(--accent)';
+        ipcRenderer.removeListener('from-python', handler);
+        
+        setTimeout(() => { status.textContent = ''; }, 3000);
+      } else if (data.status === 'error') {
+        btn.disabled = false;
+        btn.textContent = 'Update All Builds';
+        status.textContent = 'Error: ' + (data.message || 'Update failed');
+        status.style.color = '#c42b2b';
+        ipcRenderer.removeListener('from-python', handler);
+      }
+    } catch {}
+  };
+  
+  ipcRenderer.on('from-python', handler);
+});
 
 document.getElementById('info-modal').addEventListener('click', e => {
   if (e.target === document.getElementById('info-modal'))
