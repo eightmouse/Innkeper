@@ -1,14 +1,18 @@
 # Innkeeper
 
 ## Disclaimer
-This app does NOT replace Armory in any way, shape or form.
-
-It's a personal project to push my skills further while I play/learn the game!
-I like the Armory, so I though of a similar but more digestible idea to display basic infos and have it on your desktop and keeping track of multiple characters.
+This app does NOT replace Armory or WoWHead in any way, shape or form. <br />
+I strongly suggest using those since they have everything, quite thankful for them especially WoWHead, amazing resource!
 
 ## Description 
-Innkeper it's a minimal World of Warcraft app to keep track of character informations.
-The app is fullly built in Python (back-end) and Electron (front-end).
+Innkeper it's a minimal World of Warcraft app to keep track of character informations. <br />
+The app is fullly built in Python for the back-end and Electron on the front-end, I'm using Blizzard and WoWHead (to some extent) API for the data.
+
+It's a personal project that I started a while ago to push my skills further while taking breaks between WoW sessions. <br />
+Started building it few weeks prior to pushing it to GitHub, mostly due to the fact that I was not planning on actually developing something 'complete' but here we are. <br />
+
+I like the Armory and WoWHeads, so I though of a similar but more 'digestible' idea to display basic infos and have it on your desktop. <br />
+Started WoW not long ago and I found myself closing and opening WoWhead for builds over and over, I wanted something on my desktop that I could access quickly, because I'm lazy. <br />
 
 ## Features
 - Activities
@@ -21,11 +25,23 @@ The app is fullly built in Python (back-end) and Electron (front-end).
 - Talents tab
 - Vault tab
 - Profession tab
-- More coming ~
+- More???
 
 ## App
-<img width="400" height="300" alt="Screenshot 2026-02-12 170846" src="https://github.com/user-attachments/assets/fe49f26e-bed5-4fcc-8609-0bb23284f9ed" />
-<img width="400" height="300"  alt="Screenshot 2026-02-12 170859" src="https://github.com/user-attachments/assets/452fef18-8acd-4bd1-a36f-7b43e2454bdc" />
+<img width="420" height="290"  alt="Screenshot 2026-02-12 170859" src="https://github.com/user-attachments/assets/452fef18-8acd-4bd1-a36f-7b43e2454bdc" />
+<img width="420" height="290" alt="Screenshot-2026-02-12-233246" src="https://github.com/user-attachments/assets/8928e393-822c-49d3-9eae-a147ce82d3aa" />
+<img width="420" height="290" alt="Screenshot-2026-02-12-233059" src="https://github.com/user-attachments/assets/153ed300-be97-4174-ab3c-a3824d309d87" />
 
-## Note
-Download is not available yet, I'm still building the app and I want it to have enough features and stability before releasing it to the pubblic.
+## FaQ
+***Q: Why Electron?*** <br />
+*A: I know that it's quite hated for it's memory usage, super valid and agreable critique. I thought about other options but I'm not confident and skilled enough to use other frameworks. Tauri could've achieved same results with less memory usage but as I said, that would've been out of my skill reach!* <br />
+
+***Q: Will you add X?*** <br />
+*A: As I mentioned, the goal for this app is not to replace the resources already available but more of a 'quick but less' alternative. So, suggestions are welcomed but I can't guarantee I will add specific things unless they're more of a QoL than anything.*
+
+***Q: Did you use AI to help you develop the app?*** <br />
+*A: Yes. When used correctly it's an amazing tool that provides help. I see it no differently than using StackOverflow or Google, with the difference that at least I'm not get bullied for asking/expressing myself poorly. If this bothers you I apologize, this app might not be for you.*
+
+## Notes
+- Download is not available yet, I'm still building the app and I want it to have enough features and stability before releasing it to the pubblic.
+
