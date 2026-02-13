@@ -11,6 +11,14 @@
 
   <div id="titlebar">
     <div id="titlebar-left">
+      <svg id="titlebar-logo" width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2L3 7v2h18V7L12 2z" fill="rgba(58,138,80,0.6)" stroke="rgba(58,138,80,0.8)" stroke-width="1"/>
+        <rect x="5" y="9" width="14" height="11" rx="1" fill="rgba(10,20,14,0.8)" stroke="rgba(58,138,80,0.6)" stroke-width="1"/>
+        <rect x="10" y="14" width="4" height="6" rx="0.5" fill="rgba(58,138,80,0.35)" stroke="rgba(58,138,80,0.5)" stroke-width="0.7"/>
+        <rect x="7" y="11" width="3" height="3" rx="0.5" fill="rgba(58,138,80,0.2)" stroke="rgba(58,138,80,0.4)" stroke-width="0.6"/>
+        <rect x="14" y="11" width="3" height="3" rx="0.5" fill="rgba(58,138,80,0.2)" stroke="rgba(58,138,80,0.4)" stroke-width="0.6"/>
+        <circle cx="12" cy="5.5" r="1" fill="rgba(58,138,80,0.7)"/>
+      </svg>
       <span id="titlebar-title">INNKEEPER</span>
       <div id="menubar">
         <div class="menu-item" id="menu-settings">Settings</div>
@@ -117,13 +125,6 @@
           <button class="theme-btn" data-theme="light">Light</button>
         </div>
       </div>
-      <div class="setting-row">
-        <div class="setting-label">Talent Builds</div>
-        <div class="theme-buttons">
-          <button id="update-talents-btn" class="btn">Update All Builds</button>
-        </div>
-      </div>
-      <div id="talent-update-status" style="font-size:10px;margin-top:8px;color:var(--text-muted);"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="settings-close">Close</button>
@@ -206,7 +207,7 @@
             <div class="build-preset-list" id="build-presets"></div>
             <div class="talent-actions">
               <a href="#" target="_blank" class="wowhead-link" id="wowhead-talent-link">
-                <span>View on WoWHead</span>
+                <span>View Full Guide</span>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                   <path d="M10 6.5V10.5H1.5V2H5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
                   <path d="M7 1H11V5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
@@ -215,8 +216,8 @@
               </a>
             </div>
           </div>
-          <div class="talent-tree-view">
-            <div id="talent-embed-frame"></div>
+          <div class="talent-tree-view" id="talent-tree-view">
+            <!-- Tree sections rendered by JS -->
           </div>
         </div>
       </div>
@@ -522,294 +523,398 @@ function switchTab(tabName, char) {
 }
 
 // Cache for loaded talent iframes
-const talentCache = {};
+// ── TALENT TREE SYSTEM ──────────────────────────────────────────────
+// Native talent tree renderer with Blizzard API data + build string decoding.
+// Build strings are user-provided (Blizzard export format), stored in talent_builds.json.
 
-// Talent build mapping - will be loaded from talent_builds.json
-let TALENT_BUILDS = {};
-let talentsLoaded = false;
-let scrapingInProgress = false;
+const TALENT_TREE_CACHE = {};   // Cached tree data per class/spec
+let TALENT_BUILDS = {};          // Build strings per class/spec/type
+let _currentTalentChar = null;   // Currently displayed character
+let _currentBuildType = 'raid';  // Current active preset
+let _talentTooltipEl = null;     // Shared tooltip element
 
-// Load talent builds from file or trigger scraping
-async function loadTalentBuilds() {
-  console.log('[Talents] Attempting to load talent_builds.json...');
-  
-  try {
-    const response = await fetch('./talent_builds.json');
-    console.log('[Talents] Fetch response status:', response.status);
-    
-    if (response.ok) {
-      const data = await response.json();
-      TALENT_BUILDS = data;
-      console.log('✓ Loaded talent builds for', Object.keys(TALENT_BUILDS).length, 'classes');
-      talentsLoaded = true;
-      return true;
-    } else {
-      // File doesn't exist (404) - show scraping notice
-      console.log('[Talents] File not found (404) - showing setup modal');
-      setTimeout(() => showTalentScrapingNotice(), 500);
-      return false;
-    }
-  } catch (e) {
-    // Network error or other issue
-    console.log('[Talents] Error loading:', e);
-    setTimeout(() => showTalentScrapingNotice(), 500);
-    return false;
+// ── Build String Decoder ────────────────────────────────────────────
+
+class BitReader {
+  constructor(bytes) {
+    this.bytes = bytes;
+    this.byteIdx = 0;
+    this.bitIdx = 0;
   }
+  readBits(count) {
+    let result = 0;
+    for (let i = 0; i < count; i++) {
+      if (this.byteIdx >= this.bytes.length) return result;
+      const bit = (this.bytes[this.byteIdx] >> (7 - this.bitIdx)) & 1;
+      result = (result << 1) | bit;
+      this.bitIdx++;
+      if (this.bitIdx >= 8) { this.bitIdx = 0; this.byteIdx++; }
+    }
+    return result;
+  }
+  get remaining() { return (this.bytes.length - this.byteIdx) * 8 - this.bitIdx; }
 }
 
-// Show notice about talent scraping with manual trigger
-function showTalentScrapingNotice() {
-  console.log('[Talents] Showing scraping notice modal');
-  
-  // Remove any existing modal
-  const existing = document.querySelector('.talent-setup-modal');
-  if (existing) existing.remove();
-  
-  const modal = document.createElement('div');
-  modal.className = 'modal talent-setup-modal';
-  modal.style.display = 'flex';
-  modal.style.zIndex = '999';
-  modal.innerHTML = `
-    <div class="modal-content" style="max-width:450px;text-align:center;">
-      <h3>🎯 Talent Builds Setup</h3>
-      <p style="margin:16px 0 24px;">This is your first launch! Click below to fetch talent builds from WoWHead for all classes and specs.</p>
-      <button id="start-scrape-btn" class="btn" style="padding:12px 32px;font-size:13px;">
-        Fetch Talent Builds
-      </button>
-      <p style="font-size:10px;color:var(--text-muted);margin-top:16px;">
-        This will take 1-2 minutes and only needs to be done once.
-      </p>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  console.log('[Talents] Modal added to DOM');
-  
-  document.getElementById('start-scrape-btn').addEventListener('click', () => {
-    console.log('[Talents] Fetch button clicked');
-    startTalentScraping(modal);
-  });
-}
+function decodeBuildString(exportString, classNodes, specNodes) {
+  /** Decode a WoW talent export string → { nodeId: { rank, choice } } */
+  if (!exportString || exportString.length < 10) return {};
+  try {
+    const bin = atob(exportString);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 
-// Start the scraping process
-function startTalentScraping(modal) {
-  if (scrapingInProgress) return;
-  scrapingInProgress = true;
-  
-  // Update modal to show progress
-  modal.querySelector('.modal-content').innerHTML = `
-    <h3>Fetching Talent Builds</h3>
-    <p style="margin:16px 0;">Generating talent embed data...</p>
-    <div class="loading-spinner" style="margin:20px auto;"></div>
-    <p id="scrape-progress" style="font-size:11px;color:var(--text-muted);margin-top:16px;">
-      Starting...
-    </p>
-  `;
-  
-  // Send command via the correct IPC channel
-  console.log('Sending SCRAPE_TALENTS command via to-python channel...');
-  sendToPython('SCRAPE_TALENTS');
-  
-  // Set up response handler on the correct channel
-  const handleScrapeResponse = (event, raw) => {
-    try {
-      const data = JSON.parse(raw);
-      console.log('Received scrape response:', data);
-    
-      if (data.status === 'success' && data.builds) {
-        TALENT_BUILDS = data.builds;
-        talentsLoaded = true;
-        scrapingInProgress = false;
-      
-        modal.querySelector('.modal-content').innerHTML = `
-          <h3>✓ Complete!</h3>
-          <p style="margin:16px 0;color:var(--accent);">
-            Successfully loaded ${Object.keys(data.builds).length} classes
-          </p>
-          <button class="btn" onclick="this.closest('.modal').remove()">Done</button>
-        `;
-      
-        setTimeout(() => {
-          if (modal.parentNode) document.body.removeChild(modal);
-          showToast('Talent builds ready!');
-        }, 1500);
-      
-        ipcRenderer.removeListener('from-python', handleScrapeResponse);
-      } 
-      else if (data.status === 'error') {
-        scrapingInProgress = false;
-        const prog = document.getElementById('scrape-progress');
-        if (prog) {
-          prog.textContent = 'Error: ' + (data.message || 'Failed');
-          prog.style.color = '#c42b2b';
+    const reader = new BitReader(bytes);
+    const version = reader.readBits(8);   // version (1 or 2)
+    const specId = reader.readBits(16);   // spec ID
+    reader.readBits(128);                 // tree hash (skip)
+
+    const selections = {};
+    // Class nodes then spec nodes, both sorted by ID
+    const allNodes = [...classNodes, ...specNodes];
+
+    for (const node of allNodes) {
+      if (reader.remaining < 1) break;
+      const isSelected = reader.readBits(1);
+      if (isSelected) {
+        const isPartial = reader.readBits(1);
+        let rank;
+        if (isPartial) {
+          const bitsNeeded = Math.max(1, Math.ceil(Math.log2(node.max_ranks)));
+          rank = reader.readBits(bitsNeeded);
+          if (rank === 0) rank = 1;  // Minimum rank when selected
+        } else {
+          rank = node.max_ranks;
         }
-      
-        setTimeout(() => {
-          if (modal.parentNode) document.body.removeChild(modal);
-        }, 3000);
-      
-        ipcRenderer.removeListener('from-python', handleScrapeResponse);
-      }
-    } catch {}
-  };
-  
-  ipcRenderer.on('from-python', handleScrapeResponse);
-  
-  // Timeout fallback
-  setTimeout(() => {
-    if (scrapingInProgress) {
-      scrapingInProgress = false;
-      if (document.getElementById('scrape-progress')) {
-        document.getElementById('scrape-progress').textContent = 'Timed out. You can try again from Settings.';
-        document.getElementById('scrape-progress').style.color = '#c42b2b';
+        let choice = -1;
+        if (node.type === 'CHOICE') {
+          choice = reader.readBits(1);
+        }
+        selections[node.id] = { rank, choice };
       }
     }
-  }, 120000); // 2 minute timeout
-}
-
-// Initialize talent builds on startup
-console.log('[Innkeeper] Starting talent build initialization...');
-loadTalentBuilds().then(success => {
-  console.log('[Innkeeper] Talent build loading complete. Success:', success);
-  console.log('[Innkeeper] TALENT_BUILDS keys:', Object.keys(TALENT_BUILDS));
-  console.log('[Innkeeper] talentsLoaded:', talentsLoaded);
-});
-
-function getTalentBuildUrl(classSlug, specSlug, buildType) {
-  // Try to get specific build from mapping
-  try {
-    const url = TALENT_BUILDS[classSlug]?.[specSlug]?.[buildType];
-    if (url) return url;
+    return selections;
   } catch (e) {
-    // Fall through to default
+    console.warn('[Talents] Build string decode error:', e);
+    return {};
   }
-  
-  // Fallback to base embed URL (always works, shows interactive talent tree)
-  return `https://www.wowhead.com/talent-calc/embed/${classSlug}/${specSlug}`;
 }
+
+// ── Tooltip System ──────────────────────────────────────────────────
+
+function initTalentTooltip() {
+  if (_talentTooltipEl) return;
+  _talentTooltipEl = document.createElement('div');
+  _talentTooltipEl.className = 'talent-tooltip';
+  document.body.appendChild(_talentTooltipEl);
+}
+
+function showTalentTooltip(e, node, selections) {
+  initTalentTooltip();
+  const sel = selections[node.id];
+  // Pick the correct entry (for choice nodes, show the selected choice)
+  const entryIdx = (sel && sel.choice >= 0) ? sel.choice : 0;
+  const entry = node.entries[entryIdx];
+  if (!entry) return;
+
+  const rankText = node.max_ranks > 1
+    ? `<div class="talent-tooltip-meta">Rank ${sel ? sel.rank : 0}/${node.max_ranks}</div>`
+    : '';
+  const metaParts = [entry.cast_time, entry.range, entry.cooldown].filter(Boolean);
+  const metaHtml = metaParts.length > 0
+    ? `<div class="talent-tooltip-meta">${metaParts.join(' · ')}</div>`
+    : '';
+
+  // For choice nodes, show both options
+  let choiceHtml = '';
+  if (node.type === 'CHOICE' && node.entries.length > 1) {
+    choiceHtml = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(58,138,80,0.15);font-size:10px;color:var(--text-muted);">';
+    node.entries.forEach((ent, i) => {
+      const isActive = sel && sel.choice === i;
+      const arrow = isActive ? '▸ ' : '  ';
+      const style = isActive ? 'color:var(--accent);font-weight:600;' : '';
+      choiceHtml += `<div style="${style}">${arrow}${ent.name}</div>`;
+    });
+    choiceHtml += '</div>';
+  }
+
+  _talentTooltipEl.innerHTML = `
+    <div class="talent-tooltip-name">${entry.name}</div>
+    ${metaHtml}${rankText}
+    <div class="talent-tooltip-desc">${entry.description || ''}</div>
+    ${choiceHtml}
+  `;
+  _talentTooltipEl.classList.add('visible');
+  positionTooltip(e);
+}
+
+function positionTooltip(e) {
+  if (!_talentTooltipEl) return;
+  const pad = 12;
+  let x = e.clientX + pad;
+  let y = e.clientY + pad;
+  const rect = _talentTooltipEl.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth) x = e.clientX - rect.width - pad;
+  if (y + rect.height > window.innerHeight) y = e.clientY - rect.height - pad;
+  _talentTooltipEl.style.left = x + 'px';
+  _talentTooltipEl.style.top = y + 'px';
+}
+
+function hideTalentTooltip() {
+  if (_talentTooltipEl) _talentTooltipEl.classList.remove('visible');
+}
+
+// ── Main: Load Talents ──────────────────────────────────────────────
 
 function loadTalents(char) {
+  const view = document.getElementById('talent-tree-view');
   if (!char.class_slug || !char.spec_slug) {
-    document.getElementById('talent-embed-frame').innerHTML = '<div class="vault-placeholder">Talent data unavailable</div>';
+    view.innerHTML = '<div class="talent-empty"><p>Talent data unavailable for this character.</p></div>';
     return;
   }
 
-  // Build presets with Blizzard icons (Raid, Mythic+, Delves)
-  const builds = [
-    { 
-      id: 'raid', 
-      name: 'Raid', 
-      icon: 'https://render.worldofwarcraft.com/us/icons/56/inv_misc_head_dragon_01.jpg',
-      desc: 'Single-target', 
-      url: getTalentBuildUrl(char.class_slug, char.spec_slug, 'raid')
-    },
-    { 
-      id: 'mythic', 
-      name: 'Mythic+', 
-      icon: 'https://render.worldofwarcraft.com/us/icons/56/achievement_bg_wineos_underxminutes.jpg',
-      desc: 'AoE damage', 
-      url: getTalentBuildUrl(char.class_slug, char.spec_slug, 'mythic')
-    },
-    { 
-      id: 'delves', 
-      name: 'Delves', 
-      icon: 'https://render.worldofwarcraft.com/us/icons/56/inv_misc_map08.jpg',
-      desc: 'Solo content', 
-      url: getTalentBuildUrl(char.class_slug, char.spec_slug, 'delves')
-    }
+  _currentTalentChar = char;
+  _currentBuildType = 'raid';
+
+  // Set up sidebar
+  setupTalentSidebar(char);
+
+  // Check if tree data is cached
+  const cacheKey = `${char.class_slug}_${char.spec_slug}`;
+  if (TALENT_TREE_CACHE[cacheKey]) {
+    renderTalentTree(TALENT_TREE_CACHE[cacheKey], char);
+    return;
+  }
+
+  // Show loading, fetch from engine
+  view.innerHTML = '<div class="talent-loading"><div class="loading-spinner"></div>Loading talent tree from Blizzard API…</div>';
+  sendToPython(`FETCH_TALENT_TREE:${char.region}:${char.class_slug}:${char.spec_slug}`);
+}
+
+function setupTalentSidebar(char) {
+  const presets = [
+    { id: 'raid',   name: 'Raid',    icon: 'https://render.worldofwarcraft.com/us/icons/56/inv_misc_head_dragon_01.jpg',           desc: 'Single-target' },
+    { id: 'mythic', name: 'Mythic+', icon: 'https://render.worldofwarcraft.com/us/icons/56/achievement_bg_wineos_underxminutes.jpg', desc: 'AoE / Dungeon' },
+    { id: 'delves', name: 'Delves',  icon: 'https://render.worldofwarcraft.com/us/icons/56/inv_misc_map08.jpg',                     desc: 'Solo content' }
   ];
 
-  // Update external WoWHead link to guide page
-  const wowheadLink = document.getElementById('wowhead-talent-link');
-  wowheadLink.href = `https://www.wowhead.com/guide/classes/${char.class_slug}/${char.spec_slug}`;
-  wowheadLink.onclick = (e) => {
-    e.preventDefault();
-    if (ipcRenderer) {
-      ipcRenderer.send('open-external', wowheadLink.href);
-    } else {
-      window.open(wowheadLink.href, '_blank');
-    }
-  };
-
-  // Populate build presets with icons
   const presetList = document.getElementById('build-presets');
-  presetList.innerHTML = builds.map((build, idx) => `
-    <button class="build-preset ${idx === 0 ? 'active' : ''}" data-build-url="${build.url}">
-      <img src="${build.icon}" class="preset-icon-img" alt="${build.name}" />
+  presetList.innerHTML = presets.map((p, i) => `
+    <button class="build-preset ${i === 0 ? 'active' : ''}" data-build-type="${p.id}">
+      <img src="${p.icon}" class="preset-icon-img" alt="${p.name}" />
       <div class="preset-info">
-        <div class="preset-name">${build.name}</div>
-        <div class="preset-desc">${build.desc}</div>
+        <div class="preset-name">${p.name}</div>
+        <div class="preset-desc">${p.desc}</div>
       </div>
     </button>
   `).join('');
 
-  // Wire up preset switching
   document.querySelectorAll('.build-preset').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.build-preset').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      loadTalentEmbed(btn.dataset.buildUrl);
+      _currentBuildType = btn.dataset.buildType;
+      const cacheKey = `${char.class_slug}_${char.spec_slug}`;
+      if (TALENT_TREE_CACHE[cacheKey]) {
+        renderTalentTree(TALENT_TREE_CACHE[cacheKey], char);
+      }
     });
   });
 
-  // Load default build (Raid)
-  loadTalentEmbed(builds[0].url);
+  // WoWHead guide link
+  const wowheadLink = document.getElementById('wowhead-talent-link');
+  wowheadLink.href = `https://www.wowhead.com/guide/classes/${char.class_slug}/${char.spec_slug}/talent-builds-pve-dps`;
+  wowheadLink.onclick = (e) => {
+    e.preventDefault();
+    if (typeof ipcRenderer !== 'undefined') ipcRenderer.send('open-external', wowheadLink.href);
+    else window.open(wowheadLink.href, '_blank');
+  };
 }
 
-function loadTalentEmbed(url) {
-  const container = document.getElementById('talent-embed-frame');
-  
-  // Check cache
-  if (talentCache[url]) {
-    container.innerHTML = talentCache[url];
-    return;
+// ── Render Full Talent Tree ─────────────────────────────────────────
+
+function renderTalentTree(treeData, char) {
+  const view = document.getElementById('talent-tree-view');
+  const buildString = TALENT_BUILDS[char.class_slug]?.[char.spec_slug]?.[_currentBuildType] || '';
+  const selections = decodeBuildString(buildString, treeData.class_nodes || [], treeData.spec_nodes || []);
+
+  // Count selected talents for display
+  const selCount = Object.keys(selections).length;
+
+  // Build HTML
+  let html = '<div class="talent-tree-container">';
+
+  // Class talents section
+  html += renderTreeSection('Class Talents', treeData.class_nodes || [], selections, 'class');
+
+  // Hero talents (if available)
+  if (treeData.hero_trees && treeData.hero_trees.length > 0) {
+    // Show first hero tree (or the one matching the build)
+    const heroTree = treeData.hero_trees[0];
+    html += renderTreeSection(`Hero — ${heroTree.name || 'Hero Talents'}`, heroTree.nodes || [], {}, 'hero');
   }
-  
-  // Show loading indicator
-  container.innerHTML = '<div class="vault-placeholder"><div class="loading-spinner" style="margin:0 auto 12px;"></div>Loading talent tree...</div>';
-  
-  // Create iframe — allow scripts and same-origin for WoWHead interactivity
-  const iframe = document.createElement('iframe');
-  iframe.src = url;
-  iframe.frameBorder = '0';
-  iframe.scrolling = 'no';
-  iframe.style.cssText = 'width:100%;height:100%;border:none;position:absolute;top:0;left:0;';
-  iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms');
-  
-  // Error handling — if iframe fails to load after timeout, show fallback
-  let loaded = false;
-  iframe.addEventListener('load', () => {
-    loaded = true;
-    // Cache the working HTML
-    talentCache[url] = container.innerHTML;
+
+  // Spec talents section
+  html += renderTreeSection('Spec Talents', treeData.spec_nodes || [], selections, 'spec');
+
+  html += '</div>';
+
+  // Build string bar at bottom
+  html += `
+    <div class="talent-build-bar">
+      <input type="text" class="talent-build-string" id="talent-build-input"
+             placeholder="Paste build string here…" value="${escapeHtml(buildString)}" />
+      <button class="talent-copy-btn" id="talent-apply-btn">Apply</button>
+      <button class="talent-copy-btn" id="talent-copy-btn">Copy</button>
+    </div>
+    <div class="build-copy-toast" id="build-copy-toast">Copied!</div>
+  `;
+
+  view.innerHTML = html;
+
+  // Wire up build string bar
+  document.getElementById('talent-apply-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('talent-build-input');
+    const str = input.value.trim();
+    if (!str) return;
+    // Save the build string
+    if (!TALENT_BUILDS[char.class_slug]) TALENT_BUILDS[char.class_slug] = {};
+    if (!TALENT_BUILDS[char.class_slug][char.spec_slug]) TALENT_BUILDS[char.class_slug][char.spec_slug] = {};
+    TALENT_BUILDS[char.class_slug][char.spec_slug][_currentBuildType] = str;
+    // Persist via main process
+    sendToPython(`SAVE_BUILD_STRING:${char.class_slug}:${char.spec_slug}:${_currentBuildType}:${str}`);
+    // Re-render
+    renderTalentTree(treeData, char);
   });
-  
-  // Timeout fallback
-  setTimeout(() => {
-    if (!loaded && container.querySelector('iframe')) {
-      // iframe is still loading or blocked — keep it (it may still render)
-      // but add a note
-      const note = document.createElement('div');
-      note.style.cssText = 'position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--text-muted);background:rgba(0,0,0,0.7);padding:4px 12px;border-radius:10px;z-index:5;pointer-events:none;';
-      note.textContent = 'If the tree doesn\'t load, use the WoWHead link in the sidebar';
-      container.appendChild(note);
-      setTimeout(() => note.remove(), 5000);
-    }
-  }, 8000);
-  
-  container.innerHTML = '';
-  container.appendChild(iframe);
+
+  document.getElementById('talent-copy-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('talent-build-input');
+    navigator.clipboard.writeText(input.value).catch(() => {});
+    const toast = document.getElementById('build-copy-toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+  });
+
+  // Wire up tooltips
+  view.querySelectorAll('.talent-node').forEach(el => {
+    const nodeId = parseInt(el.dataset.nodeId);
+    const section = el.dataset.section;
+    let nodeList;
+    if (section === 'class') nodeList = treeData.class_nodes;
+    else if (section === 'spec') nodeList = treeData.spec_nodes;
+    else if (section === 'hero' && treeData.hero_trees?.[0]) nodeList = treeData.hero_trees[0].nodes;
+    else nodeList = [];
+    const node = nodeList.find(n => n.id === nodeId);
+    if (!node) return;
+
+    el.addEventListener('mouseenter', (e) => showTalentTooltip(e, node, selections));
+    el.addEventListener('mousemove', (e) => positionTooltip(e));
+    el.addEventListener('mouseleave', () => hideTalentTooltip());
+  });
 }
 
-// Listen for external link requests from iframe
-window.addEventListener('message', (event) => {
-  if (event.data.type === 'open-external') {
-    if (ipcRenderer) {
-      ipcRenderer.send('open-external', event.data.url);
-    } else {
-      window.open(event.data.url, '_blank');
+// ── Render One Tree Section ─────────────────────────────────────────
+
+function renderTreeSection(label, nodes, selections, sectionId) {
+  if (!nodes || nodes.length === 0) return '';
+
+  // Calculate grid bounds from node positions
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    minX = Math.min(minX, n.pos_x); maxX = Math.max(maxX, n.pos_x);
+    minY = Math.min(minY, n.pos_y); maxY = Math.max(maxY, n.pos_y);
+  }
+
+  // If pos_x/pos_y are all 0, fall back to row/col
+  const useRowCol = (maxX - minX < 10 && maxY - minY < 10);
+  if (useRowCol) {
+    minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity;
+    for (const n of nodes) {
+      minX = Math.min(minX, n.col); maxX = Math.max(maxX, n.col);
+      minY = Math.min(minY, n.row); maxY = Math.max(maxY, n.row);
     }
   }
-});
+
+  const rangeX = maxX - minX || 1;
+  const rangeY = maxY - minY || 1;
+  const padPct = 6;  // Percentage padding on each side
+
+  // Calculate section height based on number of rows
+  const numRows = useRowCol ? (maxY - minY + 1) : Math.max(4, Math.ceil(rangeY / (rangeX / 8)));
+  const sectionHeight = Math.max(140, numRows * 50 + 30);
+
+  // Map nodes to percentage positions
+  const nodePosMap = {};
+  for (const n of nodes) {
+    const nx = useRowCol ? n.col : n.pos_x;
+    const ny = useRowCol ? n.row : n.pos_y;
+    const pctX = padPct + ((nx - minX) / rangeX) * (100 - 2 * padPct);
+    const pctY = padPct + ((ny - minY) / rangeY) * (100 - 2 * padPct);
+    nodePosMap[n.id] = { pctX, pctY };
+  }
+
+  // Build SVG lines for connections
+  let svgLines = '';
+  for (const node of nodes) {
+    const target = nodePosMap[node.id];
+    if (!target || !node.locked_by) continue;
+    for (const depId of node.locked_by) {
+      const source = nodePosMap[depId];
+      if (!source) continue;
+      const bothSelected = selections[depId] && selections[node.id];
+      svgLines += `<line x1="${source.pctX}%" y1="${source.pctY}%" x2="${target.pctX}%" y2="${target.pctY}%"
+        class="${bothSelected ? 'active' : ''}" />`;
+    }
+  }
+
+  // Build node HTML
+  let nodesHtml = '';
+  for (const node of nodes) {
+    const pos = nodePosMap[node.id];
+    if (!pos) continue;
+    const sel = selections[node.id];
+    const isSelected = !!sel;
+    const entryIdx = (sel && sel.choice >= 0) ? sel.choice : 0;
+    const entry = node.entries[entryIdx] || node.entries[0];
+
+    const iconHtml = entry?.icon_url
+      ? `<img src="${entry.icon_url}" alt="${entry?.name || ''}" loading="lazy" />`
+      : `<span class="talent-node-letter">${(entry?.name || '?')[0]}</span>`;
+
+    const rankBadge = node.max_ranks > 1
+      ? `<span class="talent-rank-badge">${sel ? sel.rank : 0}/${node.max_ranks}</span>`
+      : '';
+
+    nodesHtml += `
+      <div class="talent-node ${isSelected ? 'selected' : ''}"
+           data-type="${node.type}" data-node-id="${node.id}" data-section="${sectionId}"
+           style="left:${pos.pctX}%;top:${pos.pctY}%">
+        <div class="talent-node-inner">
+          ${iconHtml}
+        </div>
+        ${rankBadge}
+      </div>`;
+  }
+
+  return `
+    <div class="talent-section">
+      <div class="talent-section-label">${label}</div>
+      <div class="talent-section-divider"></div>
+      <div class="talent-grid" style="height:${sectionHeight}px">
+        <svg class="talent-connections" viewBox="0 0 100 100" preserveAspectRatio="none">${svgLines}</svg>
+        ${nodesHtml}
+      </div>
+    </div>`;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function capitalize(str) {
+  if (!str) return '';
+  return str.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 
 function loadVault(char) {
   const container = document.getElementById('vault-content');
@@ -1033,47 +1138,6 @@ document.getElementById('menu-settings').addEventListener('click', () => documen
 document.getElementById('info-close').addEventListener('click', () => document.getElementById('info-modal').classList.remove('open'));
 document.getElementById('settings-close').addEventListener('click', () => document.getElementById('settings-modal').classList.remove('open'));
 
-// Manual talent update button
-document.getElementById('update-talents-btn').addEventListener('click', () => {
-  const btn = document.getElementById('update-talents-btn');
-  const status = document.getElementById('talent-update-status');
-  
-  btn.disabled = true;
-  btn.textContent = 'Updating...';
-  status.textContent = 'Fetching talent builds via Blizzard API + WoWHead embeds…';
-  status.style.color = 'var(--text-muted)';
-  
-  console.log('[Talents] Manual update triggered');
-  sendToPython('SCRAPE_TALENTS');
-  
-  const handler = (event, raw) => {
-    try {
-      const data = JSON.parse(raw);
-      console.log('[Talents] Received response:', data);
-      
-      if (data.status === 'success' && data.builds) {
-        TALENT_BUILDS = data.builds;
-        talentsLoaded = true;
-        btn.disabled = false;
-        btn.textContent = 'Update All Builds';
-        status.textContent = `✓ Successfully loaded ${Object.keys(data.builds).length} classes!`;
-        status.style.color = 'var(--accent)';
-        ipcRenderer.removeListener('from-python', handler);
-        
-        setTimeout(() => { status.textContent = ''; }, 3000);
-      } else if (data.status === 'error') {
-        btn.disabled = false;
-        btn.textContent = 'Update All Builds';
-        status.textContent = 'Error: ' + (data.message || 'Update failed');
-        status.style.color = '#c42b2b';
-        ipcRenderer.removeListener('from-python', handler);
-      }
-    } catch {}
-  };
-  
-  ipcRenderer.on('from-python', handler);
-});
-
 document.getElementById('info-modal').addEventListener('click', e => {
   if (e.target === document.getElementById('info-modal'))
     document.getElementById('info-modal').classList.remove('open');
@@ -1139,6 +1203,23 @@ if (ipcRenderer) {
         renderEquipment(data.items);
       } else if (data.status === 'equipment_refreshing') {
         showEquipmentRefreshing();
+      } else if (data.status === 'talent_tree') {
+        // Received talent tree data from Blizzard API
+        const cacheKey = `${data.class_slug}_${data.spec_slug}`;
+        TALENT_TREE_CACHE[cacheKey] = data.tree;
+        console.log(`✓ Talent tree loaded: ${data.class_slug}/${data.spec_slug}`);
+        // If talent tab is currently open for this class/spec, render it
+        if (_currentTalentChar &&
+            _currentTalentChar.class_slug === data.class_slug &&
+            _currentTalentChar.spec_slug === data.spec_slug) {
+          renderTalentTree(data.tree, _currentTalentChar);
+        }
+      } else if (data.status === 'talent_builds_loaded' && data.builds) {
+        // Build strings loaded from talent_builds.json
+        TALENT_BUILDS = data.builds;
+        console.log('✓ Build strings loaded for', Object.keys(data.builds).length, 'classes');
+      } else if (data.status === 'build_string_saved') {
+        console.log(`✓ Build string saved: ${data.class_slug}/${data.spec_slug}/${data.build_type}`);
       }
     } catch (e) {
       console.error('from-python parse error:', e);
