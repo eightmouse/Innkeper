@@ -332,41 +332,29 @@ SPECS_MAP = {
 
 def scrape_talent_builds(class_slug, spec_slug):
     """Generate WoWHead talent calc embed URLs for a class/spec.
-    Uses the reliable embed endpoint directly instead of scraping guide pages."""
+    NOTE: Actual scraping with JS rendering is handled by Electron main.js.
+    This is just a fallback that returns base embed URLs."""
     base = f"https://www.wowhead.com/talent-calc/embed/{class_slug}/{spec_slug}"
-    return {
-        'raid':   base,
-        'mythic': base,
-        'delves': base,
-    }
+    return {'raid': base, 'mythic': base, 'delves': base}
 
 def scrape_all_talents():
-    """Generate talent embed URLs for all classes/specs."""
-    import time as _time
+    """Generate base talent embed URLs (fallback only).
+    Real scraping with rendered WoWHead pages is done by Electron main.js."""
     talent_map = {}
     total = sum(len(specs) for specs in SPECS_MAP.values())
     progress = 0
     
     for class_slug, specs in SPECS_MAP.items():
         talent_map[class_slug] = {}
-        
         for spec_slug in specs:
             progress += 1
-            print(f"[{progress}/{total}] Generating {class_slug}/{spec_slug}...", file=sys.stderr)
-            builds = scrape_talent_builds(class_slug, spec_slug)
-            talent_map[class_slug][spec_slug] = builds
+            talent_map[class_slug][spec_slug] = scrape_talent_builds(class_slug, spec_slug)
     
-    # Save to file
     talents_file = os.path.join(basedir, 'talent_builds.json')
     with open(talents_file, 'w') as f:
         json.dump(talent_map, f, indent=2)
     
-    return {
-        "status": "success",
-        "message": f"Generated {progress} specs",
-        "builds": talent_map,
-        "file": talents_file
-    }
+    return {"status": "success", "builds": talent_map}
 
 
 # ------------[    MAIN LOOP       ]------------ #
