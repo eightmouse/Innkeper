@@ -205,7 +205,12 @@ body::before {
   align-items: center;
   height: 100%;
   padding-left: 14px;
-  gap: 14px;
+  gap: 10px;
+}
+
+#titlebar-logo {
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 #titlebar-title {
@@ -338,6 +343,13 @@ body::before {
   padding: 0 24px;
 }
 
+/* Cap card size so fewer columns don't produce giant cards */
+.char-card {
+  max-width: 220px;
+  justify-self: center;
+  width: 100%;
+}
+
 /* Responsive grid breakpoints */
 @media (max-width: 1400px) {
   #character-grid {
@@ -349,6 +361,7 @@ body::before {
   #character-grid {
     grid-template-columns: repeat(4, 1fr);
   }
+  .char-card { max-width: 200px; }
 }
 
 @media (max-width: 900px) {
@@ -625,13 +638,6 @@ body::before {
 .btn-danger    { background: var(--danger); color: #fff; }
 .btn-danger:hover { background: #cc3535; }
 
-/* Settings button consistency — match theme-btn sizing */
-#update-talents-btn {
-  padding: 6px 16px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 /* ── Info modal ──────────────────────────────── */
 .info-body { margin-bottom: 4px; }
 .info-line { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 14px; }
@@ -781,7 +787,7 @@ body::before {
 }
 
 .detail-tab-panel.active {
-  display: block;
+  display: flex;
   flex: 1;
 }
 
@@ -823,13 +829,15 @@ body::before {
 /* Talent container - sidebar + tree */
 .talent-container {
   display: flex;
+  flex: 1;
   height: 100%;
   overflow: hidden;
 }
 
 .talent-sidebar {
   width: 240px;
-  flex-shrink: 0;
+  min-width: 180px;
+  flex-shrink: 1;
   background: rgba(0,0,0,0.25);
   border-right: 1px solid rgba(58, 138, 80, 0.15);
   padding: 20px;
@@ -937,31 +945,282 @@ body::before {
   opacity: 0.6;
 }
 
-/* Talent tree view */
-/* Talent tree view - iframe container */
+/* Talent tree view — native renderer */
 .talent-tree-view {
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
   padding: 0;
   display: flex;
   flex-direction: column;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.25);
+  position: relative;
 }
 
-#talent-embed-frame {
+/* ── Native Talent Tree ─────────────── */
+
+.talent-tree-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.talent-section {
   flex: 1;
   position: relative;
-  overflow: hidden;
+  min-height: 120px;
 }
 
-#talent-embed-frame iframe {
+.talent-section-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.talent-section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, rgba(58,138,80,0.3), transparent);
+  margin: 4px 0;
+}
+
+.talent-grid {
+  position: relative;
   width: 100%;
   height: 100%;
-  border: none;
+}
+
+.talent-grid svg.talent-connections {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.talent-grid svg.talent-connections line {
+  stroke: rgba(58, 138, 80, 0.15);
+  stroke-width: 2;
+}
+.talent-grid svg.talent-connections line.active {
+  stroke: rgba(58, 138, 80, 0.5);
+  stroke-width: 2;
+}
+
+/* ── Talent Node ─────────────── */
+
+.talent-node {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.talent-node-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  background: rgba(10, 18, 14, 0.9);
+  border: 2px solid rgba(58, 138, 80, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
+  transition: all 0.15s;
+  position: relative;
+}
+
+/* Octagonal clip for active talents (WoW-style) */
+.talent-node[data-type="ACTIVE"] .talent-node-inner {
+  border-radius: 6px;
+}
+
+/* Circular clip for passive talents */
+.talent-node[data-type="PASSIVE"] .talent-node-inner {
+  border-radius: 50%;
+}
+
+/* Diamond clip for choice talents */
+.talent-node[data-type="CHOICE"] .talent-node-inner {
+  transform: rotate(45deg);
+  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  margin: 4px;
+}
+.talent-node[data-type="CHOICE"] .talent-node-inner img {
+  transform: rotate(-45deg);
+  width: 130%;
+  height: 130%;
+}
+
+/* Node icon */
+.talent-node-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: grayscale(100%) brightness(0.4);
+  transition: filter 0.15s;
+}
+
+/* Letter fallback when no icon */
+.talent-node-letter {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(58, 138, 80, 0.3);
+  user-select: none;
+}
+
+/* Rank badge */
+.talent-rank-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: rgba(6,10,8,0.9);
+  border: 1px solid rgba(58,138,80,0.2);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 1.4;
+  z-index: 2;
+}
+
+/* ── Selected state ─────────────── */
+
+.talent-node.selected .talent-node-inner {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(58, 138, 80, 0.3), inset 0 0 6px rgba(58, 138, 80, 0.1);
+}
+
+.talent-node.selected .talent-node-inner img {
+  filter: none;
+}
+
+.talent-node.selected .talent-node-letter {
+  color: var(--text-primary);
+}
+
+.talent-node.selected .talent-rank-badge {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Hover */
+.talent-node:hover .talent-node-inner {
+  border-color: rgba(58, 138, 80, 0.6);
+  transform: scale(1.1);
+}
+.talent-node[data-type="CHOICE"]:hover .talent-node-inner {
+  transform: rotate(45deg) scale(1.1);
+}
+
+/* ── Talent Tooltip ─────────────── */
+
+.talent-tooltip {
+  position: fixed;
+  z-index: 9999;
+  max-width: 300px;
+  background: rgba(8, 14, 10, 0.96);
+  border: 1px solid rgba(58, 138, 80, 0.35);
+  border-radius: 8px;
+  padding: 12px 14px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+.talent-tooltip.visible { opacity: 1; }
+
+.talent-tooltip-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.talent-tooltip-meta {
+  font-size: 10px;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.talent-tooltip-desc {
+  font-size: 11px;
+  color: var(--text-realm);
+  line-height: 1.5;
+}
+
+/* ── Build String Bar ─────────────── */
+
+.talent-build-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(0,0,0,0.3);
+  border-top: 1px solid rgba(58,138,80,0.12);
+  flex-shrink: 0;
+}
+
+.talent-build-string {
+  flex: 1;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(58,138,80,0.15);
+  border-radius: 4px;
+  padding: 6px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talent-copy-btn {
+  padding: 6px 14px;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(58,138,80,0.15);
+  border: 1px solid rgba(58,138,80,0.3);
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.talent-copy-btn:hover {
+  background: rgba(58,138,80,0.25);
+  color: var(--text-primary);
+}
+
+.talent-loading, .talent-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 40px;
+  text-align: center;
+}
+.talent-empty a {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* Light theme talent support */
@@ -1154,13 +1413,21 @@ body::before {
 #panel-vault,
 #panel-professions {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
+  display: none;
 }
 
-/* LEFT — activities & resets (fixed 240px width) */
+#panel-talents.active,
+#panel-vault.active,
+#panel-professions.active {
+  display: flex;
+}
+
+/* LEFT — activities & resets (flexible, shrinks at small windows) */
 .detail-left {
   width: 240px;
-  flex-shrink: 0;
+  min-width: 190px;
+  flex-shrink: 1;
   padding: 18px 16px;
   border-right: 1px solid rgba(58, 138, 80, 0.12);
   overflow-y: auto;
@@ -1179,34 +1446,40 @@ body::before {
   flex: 1;
   overflow: hidden;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .armory-view {
   display: flex;
-  height: 100%;
-  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;  /* Columns fill full height */
 }
 
-/* Left & right equipment columns */
+/* LEFT & right equipment columns — stretch full height, items evenly distributed */
 .equip-col {
-  width: 240px;
-  flex-shrink: 0;
-  padding: 12px 10px;
+  flex: 0 1 230px;
+  min-width: 160px;
+  padding: 0 8px;
   display: flex;
   flex-direction: column;
   justify-content: space-evenly;
-  gap: 3px;
-  overflow-y: auto;
+  align-items: stretch;
+  overflow: hidden;
   scrollbar-width: none;
+  background: rgba(6, 10, 8, 0.3);
 }
+/* Match modal border-radius at bottom edges */
+.equip-left  { border-bottom-left-radius: 10px; }
+.equip-right { border-bottom-right-radius: 10px; }
 .equip-col::-webkit-scrollbar { display: none; }
 
-/* Center portrait - background now set inline per character */
+/* Center portrait — flex:1 fills remaining space */
 .armory-portrait {
-  flex: 1;
+  flex: 1 0 300px;
   position: relative;
   overflow: hidden;
-  max-width: 600px;
   margin: 0 auto;
 }
 /* Vignette removed - full-width gradient now on armory-view for text readability */
@@ -1260,12 +1533,12 @@ body::before {
   white-space: nowrap;
 }
 
-/* Equipment row */
+/* Equipment row — natural height, packed tight */
 .equip-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: 8px;
+  padding: 3px 6px;
   border-radius: 4px;
   transition: background 0.12s;
   cursor: default;
@@ -1276,7 +1549,7 @@ body::before {
 .equip-row-right { flex-direction: row; }          /* icon on left for right column */
 
 .equip-icon {
-  width: 36px; height: 36px;
+  width: 44px; height: 44px;
   border-radius: 4px;
   flex-shrink: 0;
   background: #0a1210 center/cover;
@@ -1295,7 +1568,7 @@ body::before {
 .equip-row-left .equip-info { text-align: right; }
 
 .equip-name {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -1305,10 +1578,18 @@ body::before {
 .equip-empty-slot { color: rgba(90, 122, 96, 0.4); font-style: italic; }
 
 .equip-ilvl {
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--text-muted);
   margin-top: 1px;
   font-variant-numeric: tabular-nums;
+}
+
+/* Small windows — slightly reduce equip sizing */
+@media (max-height: 700px) {
+  .equip-icon { width: 36px; height: 36px; }
+  .equip-name { font-size: 11px; }
+  .equip-ilvl { font-size: 9px; }
+  .equip-row { gap: 6px; padding: 2px 4px; }
 }
 
 /* ── Activities (shared between list + detail) ── */
