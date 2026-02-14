@@ -5,6 +5,7 @@
 import json, requests, os, sys
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 UTC     = timezone.utc
 basedir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
@@ -312,7 +313,7 @@ def find_character(characters, name, realm):
 
 # ------------[  HELPER FUNCTION   ]------------ #
 
-# ------------[  TALENT SCRAPING  ]------------ #
+# ------------[  TALENT TREE API  ]------------ #
 
 SPECS_MAP = {
     'warrior': ['arms', 'fury', 'protection'],
@@ -330,31 +331,376 @@ SPECS_MAP = {
     'evoker': ['devastation', 'preservation', 'augmentation']
 }
 
-def scrape_talent_builds(class_slug, spec_slug):
-    """Generate WoWHead talent calc embed URLs for a class/spec.
-    NOTE: Actual scraping with JS rendering is handled by Electron main.js.
-    This is just a fallback that returns base embed URLs."""
-    base = f"https://www.wowhead.com/talent-calc/embed/{class_slug}/{spec_slug}"
-    return {'raid': base, 'mythic': base, 'delves': base}
+# Blizzard numeric spec IDs
+SPEC_IDS = {
+    'warrior':      {'arms': 71, 'fury': 72, 'protection': 73},
+    'paladin':      {'holy': 65, 'protection': 66, 'retribution': 70},
+    'hunter':       {'beast-mastery': 253, 'marksmanship': 254, 'survival': 255},
+    'rogue':        {'assassination': 259, 'outlaw': 260, 'subtlety': 261},
+    'priest':       {'discipline': 256, 'holy': 257, 'shadow': 258},
+    'death-knight': {'blood': 250, 'frost': 251, 'unholy': 252},
+    'shaman':       {'elemental': 262, 'enhancement': 263, 'restoration': 264},
+    'mage':         {'arcane': 62, 'fire': 63, 'frost': 64},
+    'warlock':      {'affliction': 265, 'demonology': 266, 'destruction': 267},
+    'monk':         {'brewmaster': 268, 'mistweaver': 270, 'windwalker': 269},
+    'druid':        {'balance': 102, 'feral': 103, 'guardian': 104, 'restoration': 105},
+    'demon-hunter': {'havoc': 577, 'vengeance': 581},
+    'evoker':       {'devastation': 1467, 'preservation': 1468, 'augmentation': 1473},
+}
 
-def scrape_all_talents():
-    """Generate base talent embed URLs (fallback only).
-    Real scraping with rendered WoWHead pages is done by Electron main.js."""
-    talent_map = {}
-    total = sum(len(specs) for specs in SPECS_MAP.values())
-    progress = 0
+def fetch_talent_tree(region, class_slug, spec_slug):
+    """Fetch the full talent tree structure from Blizzard API, with caching."""
+    spec_id = SPEC_IDS.get(class_slug, {}).get(spec_slug)
+    if not spec_id:
+        raise ValueError(f"Unknown spec: {class_slug}/{spec_slug} — not in SPEC_IDS")
+
+    cache_dir = os.path.join(basedir, 'talent_tree_cache')
+    cache_file = os.path.join(cache_dir, f'{class_slug}_{spec_slug}.json')
+
+    # Return cached data if available
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cached = json.load(f)
+            # Validate cache has expected structure
+            if cached.get('class_nodes') and cached.get('spec_nodes'):
+                print(f"[engine] Loaded cached talent tree: {cache_file}", file=sys.stderr)
+                return cached
+            else:
+                print(f"[engine] Cache file corrupt, re-fetching…", file=sys.stderr)
+        except Exception as e:
+            print(f"[engine] Cache read error: {e}", file=sys.stderr)
+
+    token = get_access_token(region)
+    if not token:
+        raise ConnectionError(f"Failed to get Blizzard API token for region '{region}'. Check BLIZZARD_CLIENT_ID and BLIZZARD_CLIENT_SECRET in your .env file.")
+
+    # Step 1: Get spec info to find the talent tree ID
+    print(f"[engine] Step 1/3: Fetching spec info for {class_slug}/{spec_slug} (id={spec_id})…", file=sys.stderr)
+    r = requests.get(
+        f"https://{region}.api.blizzard.com/data/wow/playable-specialization/{spec_id}",
+        params={"namespace": f"static-{region}", "locale": "en_US"},
+        headers=_headers(token),
+        timeout=15,
+    )
+    if r.status_code != 200:
+        raise ConnectionError(f"Step 1 failed: Blizzard API returned {r.status_code} for spec {spec_id}. Response: {r.text[:200]}")
+
+    spec_data = r.json()
     
-    for class_slug, specs in SPECS_MAP.items():
-        talent_map[class_slug] = {}
-        for spec_slug in specs:
-            progress += 1
-            talent_map[class_slug][spec_slug] = scrape_talent_builds(class_slug, spec_slug)
+    # Blizzard API uses 'spec_talent_tree' (not old 'talent_trees')
+    # This field can be: an int, a dict with key.href, or a dict with id
+    spec_tree_ref = spec_data.get('spec_talent_tree')
+    if not spec_tree_ref:
+        talent_trees = spec_data.get('talent_trees', [])
+        if talent_trees:
+            spec_tree_ref = talent_trees[0]
+        else:
+            raise ValueError(f"Step 1: No talent tree reference found. Keys: {list(spec_data.keys())}")
     
-    talents_file = os.path.join(basedir, 'talent_builds.json')
-    with open(talents_file, 'w') as f:
-        json.dump(talent_map, f, indent=2)
+    tree_id = None
     
-    return {"status": "success", "builds": talent_map}
+    if isinstance(spec_tree_ref, int):
+        # Direct integer ID
+        tree_id = spec_tree_ref
+    elif isinstance(spec_tree_ref, dict):
+        # Try key.href first: {"key":{"href":"https://...talent-tree/786/..."}}
+        tree_href = ''
+        key_obj = spec_tree_ref.get('key')
+        if isinstance(key_obj, dict):
+            tree_href = key_obj.get('href', '')
+        elif isinstance(key_obj, str):
+            tree_href = key_obj
+        
+        if '/talent-tree/' in tree_href:
+            parts = tree_href.split('/talent-tree/')[1].split('/')
+            try:
+                tree_id = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+        
+        # Fallback to direct id field
+        if not tree_id:
+            tree_id = spec_tree_ref.get('id')
+    
+    if not tree_id:
+        raise ValueError(f"Step 1: Could not extract tree ID. spec_talent_tree value: {spec_tree_ref}")
+    
+    print(f"[engine] Found tree_id={tree_id} for {class_slug}/{spec_slug}", file=sys.stderr)
+
+    # Step 2: Fetch the full talent tree
+    print(f"[engine] Step 2/3: Fetching talent tree {tree_id} for spec {spec_id}…", file=sys.stderr)
+    r2 = requests.get(
+        f"https://{region}.api.blizzard.com/data/wow/talent-tree/{tree_id}/playable-specialization/{spec_id}",
+        params={"namespace": f"static-{region}", "locale": "en_US"},
+        headers=_headers(token),
+        timeout=15,
+    )
+    if r2.status_code != 200:
+        raise ConnectionError(f"Step 2 failed: Blizzard API returned {r2.status_code} for tree {tree_id}. Response: {r2.text[:200]}")
+
+    raw_tree = r2.json()
+
+    # Dump FULL raw response for debugging (helps diagnose filtering issues)
+    try:
+        debug_file = os.path.join(basedir, 'talent_tree_debug_raw.json')
+        with open(debug_file, 'w', encoding='utf-8') as f:
+            json.dump(raw_tree, f, indent=2, ensure_ascii=False, default=str)
+        print(f"[engine] Full raw API dump → {debug_file}", file=sys.stderr)
+        
+        # Log structure summary
+        class_nodes_raw = raw_tree.get('class_talent_nodes', [])
+        spec_nodes_raw = raw_tree.get('spec_talent_nodes', [])
+        hero_trees_raw = raw_tree.get('hero_talent_trees', [])
+        print(f"[engine]   Raw counts: {len(class_nodes_raw)} class_talent_nodes, {len(spec_nodes_raw)} spec_talent_nodes, {len(hero_trees_raw) if isinstance(hero_trees_raw, list) else '?'} hero_talent_trees", file=sys.stderr)
+        
+        # Check if spec_talent_nodes contain a playable_specialization field
+        if spec_nodes_raw and isinstance(spec_nodes_raw[0], dict):
+            sample_keys = list(spec_nodes_raw[0].keys())
+            print(f"[engine]   Sample spec node keys: {sample_keys}", file=sys.stderr)
+    except Exception as e:
+        print(f"[engine] Debug dump failed: {e}", file=sys.stderr)
+
+    # Step 3: Parse into a simpler format (pass spec_id for filtering)
+    parsed = _parse_talent_tree(raw_tree, spec_id)
+    class_count = len(parsed.get('class_nodes', []))
+    spec_count = len(parsed.get('spec_nodes', []))
+    hero_count = sum(len(ht.get('nodes', [])) for ht in parsed.get('hero_trees', []))
+    print(f"[engine] Step 3/3: Parsed {class_count} class + {spec_count} spec + {hero_count} hero nodes", file=sys.stderr)
+
+    if class_count == 0 and spec_count == 0:
+        raise ValueError(f"Parsed tree has 0 nodes. Raw tree keys: {list(raw_tree.keys())}")
+
+    # Step 4: Fetch spell icons for all entries (parallel)
+    print(f"[engine] Fetching spell icons…", file=sys.stderr)
+    _attach_spell_icons(parsed, region, token)
+
+    # Cache to disk
+    os.makedirs(cache_dir, exist_ok=True)
+    with open(cache_file, 'w', encoding='utf-8') as f:
+        json.dump(parsed, f, indent=2, ensure_ascii=False)
+    print(f"[engine] ✓ Cached talent tree → {cache_file}", file=sys.stderr)
+
+    return parsed
+
+
+def _attach_spell_icons(parsed, region, token):
+    """Batch-fetch spell icon URLs and attach them to every entry in the tree."""
+    all_spell_ids = set()
+    all_nodes = list(parsed.get('class_nodes', [])) + list(parsed.get('spec_nodes', []))
+    for ht in parsed.get('hero_trees', []):
+        if isinstance(ht, dict):
+            all_nodes += ht.get('nodes', [])
+    for node in all_nodes:
+        if not isinstance(node, dict):
+            continue
+        for entry in node.get('entries', []):
+            if not isinstance(entry, dict):
+                continue
+            sid = entry.get('spell_id')
+            if sid and isinstance(sid, int):
+                all_spell_ids.add(sid)
+
+    if not all_spell_ids:
+        return
+
+    print(f"[engine] Fetching {len(all_spell_ids)} spell icons in parallel…", file=sys.stderr)
+
+    icon_map = {}
+
+    def _fetch_one_icon(spell_id):
+        try:
+            r = requests.get(
+                f"https://{region}.api.blizzard.com/data/wow/media/spell/{spell_id}",
+                params={"namespace": f"static-{region}", "locale": "en_US"},
+                headers=_headers(token),
+                timeout=10,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                assets = data.get("assets", [])
+                if isinstance(assets, list):
+                    for a in assets:
+                        if isinstance(a, dict) and a.get("key") == "icon":
+                            return (spell_id, a.get("value"))
+        except Exception:
+            pass
+        return (spell_id, None)
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futures = [executor.submit(_fetch_one_icon, sid) for sid in all_spell_ids]
+        for future in as_completed(futures):
+            sid, url = future.result()
+            if url:
+                icon_map[sid] = url
+
+    # Attach icons to entries
+    for node in all_nodes:
+        if not isinstance(node, dict):
+            continue
+        for entry in node.get('entries', []):
+            if not isinstance(entry, dict):
+                continue
+            sid = entry.get('spell_id')
+            if sid and sid in icon_map:
+                entry['icon_url'] = icon_map[sid]
+
+    print(f"[engine] Got icons for {len(icon_map)}/{len(all_spell_ids)} spells", file=sys.stderr)
+
+
+def _parse_talent_tree(raw, active_spec_id=None):
+    """Parse Blizzard's talent tree response into a frontend-friendly format.
+    The API already returns only nodes for the queried spec.
+    We filter hero trees to only include ones available to the active spec."""
+    result = {
+        'class_nodes': [],
+        'spec_nodes': [],
+        'hero_trees': [],
+    }
+
+    # Parse class nodes (shared across all specs of this class)
+    for node in raw.get('class_talent_nodes', []):
+        if isinstance(node, dict):
+            parsed_node = _parse_node(node)
+            # Skip gate/placeholder nodes with no usable entries
+            if parsed_node['entries'] and any(e.get('name') and e['name'] != '?' for e in parsed_node['entries']):
+                result['class_nodes'].append(parsed_node)
+            else:
+                print(f"[engine] Skipping empty node id={parsed_node['id']} row={parsed_node['row']} col={parsed_node['col']}", file=sys.stderr)
+
+    # Parse spec nodes (API already returns only the queried spec's nodes)
+    for node in raw.get('spec_talent_nodes', []):
+        if isinstance(node, dict):
+            parsed_node = _parse_node(node)
+            if parsed_node['entries'] and any(e.get('name') and e['name'] != '?' for e in parsed_node['entries']):
+                result['spec_nodes'].append(parsed_node)
+            else:
+                print(f"[engine] Skipping empty node id={parsed_node['id']} row={parsed_node['row']} col={parsed_node['col']}", file=sys.stderr)
+
+    # Parse hero talent trees — filter to only include trees for the active spec
+    hero_raw = raw.get('hero_talent_trees', [])
+    if isinstance(hero_raw, list):
+        for ht in hero_raw:
+            if not isinstance(ht, dict):
+                continue
+            hero_nodes_raw = ht.get('hero_talent_nodes', [])
+            if not isinstance(hero_nodes_raw, list):
+                hero_nodes_raw = []
+
+            # Filter by playable_specializations
+            ht_specs = ht.get('playable_specializations', [])
+            if ht_specs and active_spec_id:
+                spec_ids_in_tree = set()
+                for sp_ref in ht_specs:
+                    if isinstance(sp_ref, int):
+                        spec_ids_in_tree.add(sp_ref)
+                    elif isinstance(sp_ref, dict):
+                        sid = sp_ref.get('id')
+                        if sid is not None:
+                            spec_ids_in_tree.add(int(sid))
+                if spec_ids_in_tree and active_spec_id not in spec_ids_in_tree:
+                    print(f"[engine] Skipping hero tree '{ht.get('name', '?')}' (not for spec {active_spec_id})", file=sys.stderr)
+                    continue
+
+            hero = {
+                'id': ht.get('id', 0) if isinstance(ht.get('id'), int) else 0,
+                'name': ht.get('name', '') if isinstance(ht.get('name'), str) else str(ht.get('name', '')),
+                'nodes': [_parse_node(n) for n in hero_nodes_raw if isinstance(n, dict)]
+            }
+            result['hero_trees'].append(hero)
+
+    print(f"[engine] Parsed: {len(result['class_nodes'])} class, {len(result['spec_nodes'])} spec, {len(result['hero_trees'])} hero trees ({', '.join(ht['name'] for ht in result['hero_trees'])})", file=sys.stderr)
+
+    # Sort by ID (critical for build string decoding)
+    result['class_nodes'].sort(key=lambda n: n['id'])
+    result['spec_nodes'].sort(key=lambda n: n['id'])
+
+    return result
+
+
+def _safe_get(obj, key, default=None):
+    """Safely get a key from obj — handles obj being int, str, list, or None."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return default
+
+
+def _parse_node(node):
+    """Parse a single talent node into simplified format.
+    Defensively handles API fields being int/str instead of dict."""
+    
+    # node_type can be {"type":"ACTIVE"} or a string "ACTIVE" or an int
+    raw_type = node.get('node_type', 'ACTIVE')
+    if isinstance(raw_type, dict):
+        node_type = raw_type.get('type', 'ACTIVE')
+    elif isinstance(raw_type, str):
+        node_type = raw_type
+    else:
+        node_type = 'ACTIVE'
+    
+    # locked_by can be [{id: 123}] or [123] or [{"id": 123}]
+    raw_deps = node.get('locked_by', [])
+    locked_by = []
+    for dep in raw_deps:
+        if isinstance(dep, int):
+            locked_by.append(dep)
+        elif isinstance(dep, dict):
+            locked_by.append(dep.get('id', 0))
+        else:
+            pass  # skip unknown formats
+
+    n = {
+        'id':         node.get('id', 0),
+        'row':        node.get('display_row', 0),
+        'col':        node.get('display_col', 0),
+        'pos_x':      node.get('raw_position_x', 0),
+        'pos_y':      node.get('raw_position_y', 0),
+        'type':       node_type,
+        'max_ranks':  0,
+        'entries':    [],
+        'locked_by':  locked_by,
+    }
+
+    ranks = node.get('ranks', [])
+    n['max_ranks'] = max(len(ranks), 1)
+
+    # Check for choice nodes (have choice_of_tooltips)
+    if ranks and isinstance(ranks[0], dict) and ranks[0].get('choice_of_tooltips'):
+        n['type'] = 'CHOICE'
+        n['max_ranks'] = 1
+        for ct in ranks[0]['choice_of_tooltips']:
+            if not isinstance(ct, dict):
+                continue
+            st = _safe_get(ct, 'spell_tooltip', {})
+            sp = _safe_get(st, 'spell', {})
+            talent_ref = _safe_get(ct, 'talent', {})
+            n['entries'].append({
+                'name':        _safe_get(sp, 'name') or _safe_get(talent_ref, 'name', '?'),
+                'spell_id':    _safe_get(sp, 'id', 0) if isinstance(sp, dict) else (sp if isinstance(sp, int) else 0),
+                'description': _safe_get(st, 'description', ''),
+                'cast_time':   _safe_get(st, 'cast_time', ''),
+                'cooldown':    _safe_get(st, 'cooldown', ''),
+                'range':       _safe_get(st, 'range', ''),
+            })
+    else:
+        # Regular node — one entry per rank
+        for rank_info in ranks:
+            if not isinstance(rank_info, dict):
+                continue
+            tt = _safe_get(rank_info, 'tooltip', {})
+            st = _safe_get(tt, 'spell_tooltip', {})
+            sp = _safe_get(st, 'spell', {})
+            talent_ref = _safe_get(tt, 'talent', {})
+            n['entries'].append({
+                'name':        _safe_get(sp, 'name') or _safe_get(talent_ref, 'name', '?'),
+                'spell_id':    _safe_get(sp, 'id', 0) if isinstance(sp, dict) else (sp if isinstance(sp, int) else 0),
+                'description': _safe_get(st, 'description', ''),
+                'cast_time':   _safe_get(st, 'cast_time', ''),
+                'cooldown':    _safe_get(st, 'cooldown', ''),
+                'range':       _safe_get(st, 'range', ''),
+            })
+
+    return n
 
 
 # ------------[    MAIN LOOP       ]------------ #
@@ -481,9 +827,31 @@ def main():
                 else:
                     emit({"status": "error", "message": "Could not authenticate"})
 
-        elif command == "SCRAPE_TALENTS":
-            result = scrape_all_talents()
-            emit(result)
+        elif command.startswith("FETCH_TALENT_TREE:"):
+            parts = command.split(":", 3)
+            if len(parts) == 4:
+                _, region, class_slug, spec_slug = [p.strip() for p in parts]
+                try:
+                    tree = fetch_talent_tree(region, class_slug, spec_slug)
+                    if tree:
+                        emit({"status": "talent_tree", "class_slug": class_slug,
+                              "spec_slug": spec_slug, "tree": tree})
+                    else:
+                        emit({"status": "talent_tree_error",
+                              "class_slug": class_slug, "spec_slug": spec_slug,
+                              "message": f"API returned no data for {class_slug}/{spec_slug}. Check API credentials in .env"})
+                except Exception as e:
+                    print(f"[engine] Talent tree fetch crashed: {e}", file=sys.stderr)
+                    emit({"status": "talent_tree_error",
+                          "class_slug": class_slug, "spec_slug": spec_slug,
+                          "message": str(e)})
+
+        elif command == "CLEAR_TALENT_CACHE":
+            cache_dir = os.path.join(basedir, 'talent_tree_cache')
+            if os.path.exists(cache_dir):
+                import shutil
+                shutil.rmtree(cache_dir)
+            emit({"status": "success", "message": "Talent tree cache cleared"})
 
         elif command == "EXIT":
             save_data(characters)
