@@ -1,0 +1,235 @@
+{
+  "death-knight": {
+    "frost": {
+      "raid": "CsPAAAAAAAAAAAAAAAAAAAAAAYAmZMjZAz2MzMzMLmZkZwwMzMGmxMzMzMzMDAAAAAAAAAAbmNDDMwsphG2wMzMzMAAGAwMA",
+      "mythic": "CsPAAAAAAAAAAAAAAAAAAAAAAYAzMMjZAzmZmZmZxMjmZwwMjx4BmxMzMzMzMDAAAAAAAAAAbmNDDMwsphG2wMzMzMAAGAwMA",
+      "delves": "CsPAAAAAAAAAAAAAAAAAAAAAAYAzMMjZAzmZmZmZxMjmZwwMjx4BmxMzMzMzMDAAAAAAAAAAbmNDDMwsphG2wMzMzMAAGAwMA"
+    },
+    "unholy": {
+      "raid": "",
+      "mythic": "",
+      "delves": ""
+    },
+    "blood": {
+      "raid": "",
+      "mythic": "",
+      "delves": ""
+    }
+  },
+
+  "warrior": {
+    "arms": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "fury": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "protection": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "paladin": {
+    "holy": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "protection": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "retribution": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "hunter": {
+    "beast-mastery": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "marksmanship": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "survival": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "rogue": {
+    "assassination": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "outlaw": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "subtlety": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "priest": {
+    "discipline": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "holy": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "shadow": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "shaman": {
+    "elemental": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "enhancement": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "restoration": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "mage": {
+    "arcane": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "fire": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "frost": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "warlock": {
+    "affliction": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "demonology": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "destruction": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "monk": {
+    "brewmaster": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "mistweaver": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "windwalker": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "druid": {
+    "balance": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "feral": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "guardian": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "restoration": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "demon-hunter": {
+    "havoc": { 
+    "raid": "", 
+    "mythic": "", 
+    "delves": "" 
+  },
+    "vengeance": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  },
+
+  "evoker": {
+    "devastation": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "preservation": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    },
+    "augmentation": { 
+      "raid": "", 
+      "mythic": "", 
+      "delves": "" 
+    }
+  }
+}
