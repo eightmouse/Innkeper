@@ -550,73 +550,126 @@ class BitReader {
 
 function decodeBuildString(exportString, classNodes, specNodes, heroTrees) {
   /**
-   * Decode a WoW talent export string.
-   * IMPORTANT: spec_nodes includes hero nodes — the build string encodes them all linearly.
-   * Returns { selections: {nodeId: {rank, choice}}, activeHeroTreeName }
+   * WoW Talent Export Decoder — tries both known bit formats and picks the one
+   * that produces a valid result (30-60 selected talents for a full build).
    */
   const result = { selections: {}, activeHeroTreeName: null };
   if (!exportString || exportString.length < 10) return result;
   try {
     let b64 = exportString.trim().replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4 !== 0) b64 += '=';
-
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 
-    const reader = new BitReader(bytes);
-    const version = reader.readBits(8);
-    const specId = reader.readBits(16);
-    reader.readBits(128); // tree hash
-
-    // ALL nodes sorted by ID — class first, then spec (which includes hero nodes)
     const allNodes = [...classNodes, ...specNodes];
 
-    console.log(`[Talents] Decode: v=${version}, specId=${specId}, ${bytes.length} bytes, ${classNodes.length} class + ${specNodes.length} spec (incl hero) = ${allNodes.length} total nodes`);
+    // Try both approaches and pick the one that gives 30-60 selections
+    const approaches = [
+      { name: 'A_always_partial', alwaysPartial: true },
+      { name: 'B_multi_only',     alwaysPartial: false },
+    ];
 
-    for (const node of allNodes) {
-      if (reader.remaining < 1) break;
-      const isSelected = reader.readBits(1);
-      if (isSelected) {
-        let rank = node.max_ranks;
-        let choice = -1;
+    let bestResult = null, bestName = '';
+    for (const approach of approaches) {
+      const reader = new BitReader(bytes);
+      reader.readBits(8);   // version
+      reader.readBits(16);  // specId
+      reader.readBits(128); // hash
 
-        // Multi-rank nodes: read partial flag + optional rank bits
-        // Single-rank nodes: no partial flag in the binary format
-        if (node.max_ranks > 1) {
-          const isPartial = reader.readBits(1);
-          if (isPartial) {
-            const bitsNeeded = Math.max(1, Math.ceil(Math.log2(node.max_ranks)));
-            rank = reader.readBits(bitsNeeded);
-            if (rank === 0) rank = 1;
+      const sels = {};
+      let valid = true;
+      for (const node of allNodes) {
+        if (reader.remaining < 1) break;
+        const isSelected = reader.readBits(1);
+        if (isSelected) {
+          let rank = node.max_ranks;
+          let choice = -1;
+
+          if (approach.alwaysPartial || node.max_ranks > 1) {
+            if (reader.remaining < 1) { valid = false; break; }
+            const isPartial = reader.readBits(1);
+            if (isPartial) {
+              const bits = Math.ceil(Math.log2(node.max_ranks + 1));
+              if (bits > 0 && reader.remaining >= bits) {
+                rank = reader.readBits(bits);
+                if (rank === 0) rank = 1;
+              }
+            }
           }
-        }
 
-        if (node.type === 'CHOICE') {
-          choice = reader.readBits(1);
+          if (node.type === 'CHOICE') {
+            if (reader.remaining < 1) { valid = false; break; }
+            choice = reader.readBits(1);
+          }
+          sels[node.id] = { rank, choice };
         }
+      }
 
-        result.selections[node.id] = { rank, choice };
+      const count = Object.keys(sels).length;
+      const bitsLeft = reader.remaining;
+      console.log(`[Talents] Decode ${approach.name}: ${count} selected, ${bitsLeft} bits left, valid=${valid}`);
+
+      // A good decode: 25-65 selections, few bits remaining, didn't run out
+      if (valid && count >= 25 && count <= 70 && bitsLeft < 30) {
+        if (!bestResult || Math.abs(count - 45) < Math.abs(Object.keys(bestResult).length - 45)) {
+          bestResult = sels;
+          bestName = approach.name;
+        }
       }
     }
 
-    // Determine active hero tree by checking which tree has the most selected nodes
+    // Fallback: if neither approach was ideal, pick the one with more selections
+    if (!bestResult) {
+      console.warn('[Talents] Neither approach ideal, retrying with relaxed criteria');
+      for (const approach of approaches) {
+        const reader = new BitReader(bytes);
+        reader.readBits(8); reader.readBits(16); reader.readBits(128);
+        const sels = {};
+        for (const node of allNodes) {
+          if (reader.remaining < 1) break;
+          const isSelected = reader.readBits(1);
+          if (isSelected) {
+            let rank = node.max_ranks, choice = -1;
+            if (approach.alwaysPartial || node.max_ranks > 1) {
+              if (reader.remaining < 1) break;
+              const isPartial = reader.readBits(1);
+              if (isPartial) {
+                const bits = Math.ceil(Math.log2(node.max_ranks + 1));
+                if (bits > 0 && reader.remaining >= bits) rank = reader.readBits(bits);
+              }
+            }
+            if (node.type === 'CHOICE') {
+              if (reader.remaining >= 1) choice = reader.readBits(1);
+            }
+            sels[node.id] = { rank, choice };
+          }
+        }
+        if (!bestResult || Object.keys(sels).length > Object.keys(bestResult).length) {
+          bestResult = sels;
+          bestName = approach.name;
+        }
+      }
+    }
+
+    result.selections = bestResult || {};
+    console.log(`[Talents] Winner: ${bestName} with ${Object.keys(result.selections).length} nodes`);
+
+    // Determine active hero tree
     if (heroTrees && heroTrees.length > 0) {
       let bestTree = null, bestCount = 0;
       for (const ht of heroTrees) {
         if (!ht.nodes) continue;
         const heroIds = new Set(ht.nodes.map(n => n.id));
         const count = Object.keys(result.selections).filter(id => heroIds.has(parseInt(id))).length;
-        if (count > bestCount) { bestCount = count; bestTree = ht.name; }
+        if (count > bestCount) { bestCount = count; bestTree = ht; }
       }
-      result.activeHeroTreeName = bestTree;
-      console.log(`[Talents] Active hero tree: ${bestTree} (${bestCount} nodes selected)`);
+      if (bestTree) result.activeHeroTreeName = bestTree.name;
     }
 
-    console.log(`[Talents] Decoded: ${Object.keys(result.selections).length} total selected`);
     return result;
   } catch (e) {
-    console.error('[Talents] Decode error:', e, exportString.substring(0, 50));
+    console.error('[Talents] Decode error:', e);
     return result;
   }
 }
@@ -757,27 +810,6 @@ function setupTalentSidebar(char) {
       document.querySelectorAll('.build-preset').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _currentBuildType = btn.dataset.buildType;
-
-      // Live-reload talent_builds.json so edits take effect without restart
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const buildsFile = path.join(__dirname, 'talent_builds.json');
-        if (fs.existsSync(buildsFile)) {
-          const raw = JSON.parse(fs.readFileSync(buildsFile, 'utf-8'));
-          // Strip _ prefixed keys
-          const builds = {};
-          for (const key of Object.keys(raw)) {
-            if (!key.startsWith('_')) builds[key] = raw[key];
-          }
-          TALENT_BUILDS = builds;
-          const str = builds[char.class_slug]?.[char.spec_slug]?.[_currentBuildType] || '';
-          console.log(`[Talents] Reloaded builds → ${char.class_slug}/${char.spec_slug}/${_currentBuildType}: ${str ? str.substring(0,30)+'…' : '(empty)'}`);
-        }
-      } catch(e) {
-        console.warn('[Talents] Could not reload builds:', e.message);
-      }
-
       const cacheKey = `${char.class_slug}_${char.spec_slug}`;
       if (TALENT_TREE_CACHE[cacheKey]) {
         renderTalentTree(TALENT_TREE_CACHE[cacheKey], char);
@@ -822,92 +854,72 @@ function setupTalentSidebar(char) {
 function renderTalentTree(treeData, char) {
   const view = document.getElementById('talent-tree-view');
 
-  // Always re-read talent_builds.json for freshest data
+  // Live-reload talent_builds.json for freshest data
   try {
     const fs = require('fs');
-    const path = require('path');
-    const buildsFile = path.join(__dirname, 'talent_builds.json');
+    const buildsFile = require('path').join(__dirname, 'talent_builds.json');
     if (fs.existsSync(buildsFile)) {
       const raw = JSON.parse(fs.readFileSync(buildsFile, 'utf-8'));
       const builds = {};
-      for (const key of Object.keys(raw)) {
-        if (!key.startsWith('_')) builds[key] = raw[key];
-      }
+      for (const k of Object.keys(raw)) { if (!k.startsWith('_')) builds[k] = raw[k]; }
       TALENT_BUILDS = builds;
     }
   } catch(e) { /* ignore */ }
 
   const buildString = TALENT_BUILDS[char.class_slug]?.[char.spec_slug]?.[_currentBuildType] || '';
-
-  // Debug: show what we found
-  const availableTypes = Object.keys(TALENT_BUILDS[char.class_slug]?.[char.spec_slug] || {});
-  console.log(`[Talents] Build lookup: ${char.class_slug}/${char.spec_slug}/${_currentBuildType}`);
-  console.log(`[Talents]   Available types: [${availableTypes.join(', ')}]`);
-  console.log(`[Talents]   String: ${buildString ? buildString.substring(0, 40) + '… (' + buildString.length + ' chars)' : '(EMPTY - add to talent_builds.json)'}`);
+  console.log(`[Talents] ${char.class_slug}/${char.spec_slug}/${_currentBuildType}: ${buildString ? buildString.length + ' chars' : 'EMPTY'}`);
 
   const classNodes = treeData.class_nodes || [];
-  const specNodes = treeData.spec_nodes || [];   // includes hero nodes!
+  const specNodes = treeData.spec_nodes || [];
   const heroTrees = treeData.hero_trees || [];
 
-  // Decode — treats class + spec (incl hero) as one linear sequence
-  const decodeResult = decodeBuildString(buildString, classNodes, specNodes, heroTrees);
-  const selections = decodeResult.selections || {};
+  // Decode (one flat sequence: class + spec, spec includes hero nodes)
+  const { selections, activeHeroTreeName } = decodeBuildString(buildString, classNodes, specNodes, heroTrees);
 
-  // Build set of ALL hero node IDs (from all hero trees for this spec)
+  // Split spec_nodes into hero display + pure spec
   const allHeroNodeIds = new Set();
-  const heroTreeByNodeId = {};
+  let activeHeroTree = null;
   for (const ht of heroTrees) {
     if (!ht.nodes) continue;
-    for (const n of ht.nodes) {
-      allHeroNodeIds.add(n.id);
-      heroTreeByNodeId[n.id] = ht.name;
-    }
+    for (const n of ht.nodes) allHeroNodeIds.add(n.id);
+    if (ht.name === activeHeroTreeName) activeHeroTree = ht;
   }
-
-  // Determine active hero tree: the one with the most selected nodes
-  let activeHeroTree = null;
-  if (heroTrees.length > 0) {
-    let bestCount = 0;
-    for (const ht of heroTrees) {
-      if (!ht.nodes) continue;
-      const count = ht.nodes.filter(n => selections[n.id]).length;
-      if (count > bestCount) { bestCount = count; activeHeroTree = ht; }
-    }
-    if (!activeHeroTree) activeHeroTree = heroTrees[0]; // fallback
-  }
-
-  // Split spec_nodes: hero nodes go to middle column, rest to spec column
-  const activeHeroIds = new Set(activeHeroTree ? activeHeroTree.nodes.map(n => n.id) : []);
+  if (!activeHeroTree && heroTrees.length > 0) activeHeroTree = heroTrees[0];
   const pureSpecNodes = specNodes.filter(n => !allHeroNodeIds.has(n.id));
-  const heroDisplayNodes = activeHeroTree ? activeHeroTree.nodes : [];
+  const heroNodes = activeHeroTree ? activeHeroTree.nodes : [];
 
-  console.log(`[Talents] Render: ${classNodes.length} class | ${heroDisplayNodes.length} hero (${activeHeroTree?.name || 'none'}) | ${pureSpecNodes.length} spec | ${Object.keys(selections).length} selected | Build: ${_currentBuildType}`);
+  // Calculate flex from visible node position spans
+  const visibleSpan = (nodes) => {
+    if (!nodes || nodes.length === 0) return 1;
+    const vis = nodes.filter(n => n.entries?.length > 0 && n.entries.some(e => e.name && e.name !== '?'));
+    if (vis.length === 0) return 1;
+    let min = Infinity, max = -Infinity;
+    for (const n of vis) { min = Math.min(min, n.pos_x); max = Math.max(max, n.pos_x); }
+    return Math.max(max - min, 1);
+  };
 
-  // Render three columns with proper proportions
-  // Class and Spec get equal weight, Hero gets less (it's a small tree)
+  const classSpan = visibleSpan(classNodes);
+  const heroSpan = heroNodes.length > 0 ? visibleSpan(heroNodes) : 0;
+  const specSpan = visibleSpan(pureSpecNodes);
+
   let html = '<div class="talent-tree-container">';
-  html += renderTreeSection(capitalize(char.class_slug), classNodes, selections, 'class', 5);
-  if (heroDisplayNodes.length > 0) {
-    html += renderTreeSection(activeHeroTree.name || 'Hero', heroDisplayNodes, selections, 'hero', 2);
+  html += renderTreeSection(capitalize(char.class_slug), classNodes, selections, 'class', classSpan);
+  if (heroNodes.length > 0) {
+    html += renderTreeSection(activeHeroTree.name || 'Hero', heroNodes, selections, 'hero', heroSpan);
   }
-  html += renderTreeSection(capitalize(char.spec_slug), pureSpecNodes, selections, 'spec', 5);
+  html += renderTreeSection(capitalize(char.spec_slug), pureSpecNodes, selections, 'spec', specSpan);
   html += '</div>';
-
   view.innerHTML = html;
 
-  // Wire tooltips
+  // Tooltips
   view.querySelectorAll('.talent-node').forEach(el => {
     const nodeId = parseInt(el.dataset.nodeId);
-    const section = el.dataset.section;
-    let nodeList;
-    if (section === 'class') nodeList = classNodes;
-    else if (section === 'spec') nodeList = pureSpecNodes;
-    else if (section === 'hero') nodeList = heroDisplayNodes;
-    else nodeList = [];
-    const node = nodeList.find(n => n.id === nodeId);
+    const s = el.dataset.section;
+    const list = s === 'class' ? classNodes : s === 'hero' ? heroNodes : pureSpecNodes;
+    const node = list.find(n => n.id === nodeId);
     if (!node) return;
-    el.addEventListener('mouseenter', (e) => showTalentTooltip(e, node, selections));
-    el.addEventListener('mousemove', (e) => positionTooltip(e));
+    el.addEventListener('mouseenter', e => showTalentTooltip(e, node, selections));
+    el.addEventListener('mousemove', e => positionTooltip(e));
     el.addEventListener('mouseleave', () => hideTalentTooltip());
   });
 }
@@ -918,23 +930,31 @@ function renderTreeSection(label, nodes, selections, sectionId, flexWeight) {
   if (!nodes || nodes.length === 0) return '';
   flexWeight = flexWeight || 1;
 
-  // Use display_row / display_col as integer grid coordinates
-  let minRow = Infinity, maxRow = -Infinity, minCol = Infinity, maxCol = -Infinity;
-  for (const n of nodes) {
-    minRow = Math.min(minRow, n.row); maxRow = Math.max(maxRow, n.row);
-    minCol = Math.min(minCol, n.col); maxCol = Math.max(maxCol, n.col);
+  // Filter to visible nodes (skip gate/placeholder nodes with no usable entries)
+  const visibleNodes = nodes.filter(n =>
+    n.entries && n.entries.length > 0 &&
+    n.entries.some(e => e.name && e.name !== '?')
+  );
+  if (visibleNodes.length === 0) return '';
+
+  // Use raw_position (pos_x/pos_y) for layout — these have proper sub-grid centering
+  // unlike display_col which has only 4 values for hero trees (can't center a diamond)
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of visibleNodes) {
+    minX = Math.min(minX, n.pos_x); maxX = Math.max(maxX, n.pos_x);
+    minY = Math.min(minY, n.pos_y); maxY = Math.max(maxY, n.pos_y);
   }
 
-  const rangeRow = maxRow - minRow || 1;
-  const rangeCol = maxCol - minCol || 1;
+  const rangeX = maxX - minX || 1;
+  const rangeY = maxY - minY || 1;
 
-  // Percentage positioning with padding so edge nodes aren't clipped
-  const padX = 8, padY = 4;
+  // Percentage positioning with edge padding
+  const padX = 10, padY = 5;
 
   const nodePosMap = {};
   for (const n of nodes) {
-    const pctX = padX + ((n.col - minCol) / rangeCol) * (100 - 2 * padX);
-    const pctY = padY + ((n.row - minRow) / rangeRow) * (100 - 2 * padY);
+    const pctX = padX + ((n.pos_x - minX) / rangeX) * (100 - 2 * padX);
+    const pctY = padY + ((n.pos_y - minY) / rangeY) * (100 - 2 * padY);
     nodePosMap[n.id] = { pctX, pctY };
   }
 
@@ -949,15 +969,20 @@ function renderTreeSection(label, nodes, selections, sectionId, flexWeight) {
       const source = nodePosMap[depId];
       if (!source) continue;
       const bothSelected = selections[depId] && selections[node.id];
-      svgLines += `<line x1="${source.pctX}%" y1="${source.pctY}%" x2="${target.pctX}%" y2="${target.pctY}%" class="${bothSelected ? 'active' : ''}" />`;
+      svgLines += `<line x1="${source.pctX}" y1="${source.pctY}" x2="${target.pctX}" y2="${target.pctY}" class="${bothSelected ? 'active' : ''}" />`;
     }
   }
 
-  // Node HTML
+  // Node HTML — skip nodes with no usable entries (gate nodes) but they stay in the array for decoder
   let nodesHtml = '';
   for (const node of nodes) {
     const pos = nodePosMap[node.id];
     if (!pos) continue;
+    // Skip gate/placeholder nodes with no entries or only "?" entries
+    if (!node.entries || node.entries.length === 0 || 
+        (node.entries.length === 1 && (!node.entries[0].name || node.entries[0].name === '?'))) {
+      continue;
+    }
     const sel = selections[node.id];
     const isSelected = !!sel;
     const entryIdx = (sel && sel.choice >= 0) ? sel.choice : 0;

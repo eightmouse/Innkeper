@@ -968,8 +968,8 @@ body::before {
   flex: 1;
   min-height: 0;
   min-width: 0;
-  padding: 4px 0;
-  gap: 0;
+  padding: 4px 8px;
+  gap: 12px;
 }
 
 /* Each section fills proportional width via flex-grow from JS */
@@ -979,14 +979,12 @@ body::before {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  border-right: 1px solid rgba(58, 138, 80, 0.08);
-}
-.talent-section:last-child {
-  border-right: none;
 }
 
 .talent-section[data-section="hero"] {
   background: rgba(58, 138, 80, 0.03);
+  border-radius: 6px;
+  min-width: 140px;
 }
 
 .talent-section-label {
@@ -996,7 +994,7 @@ body::before {
   text-transform: uppercase;
   color: rgba(58, 138, 80, 0.4);
   text-align: center;
-  padding: 2px 4px 0;
+  padding: 4px 4px 2px;
   flex-shrink: 0;
 }
 
