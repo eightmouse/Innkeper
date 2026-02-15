@@ -559,23 +559,17 @@ def _parse_talent_tree(raw, active_spec_id=None):
     }
 
     # Parse class nodes (shared across all specs of this class)
+    # IMPORTANT: Keep ALL nodes including empty gates — decoder needs them for bit alignment
     for node in raw.get('class_talent_nodes', []):
         if isinstance(node, dict):
             parsed_node = _parse_node(node)
-            # Skip gate/placeholder nodes with no usable entries
-            if parsed_node['entries'] and any(e.get('name') and e['name'] != '?' for e in parsed_node['entries']):
-                result['class_nodes'].append(parsed_node)
-            else:
-                print(f"[engine] Skipping empty node id={parsed_node['id']} row={parsed_node['row']} col={parsed_node['col']}", file=sys.stderr)
+            result['class_nodes'].append(parsed_node)
 
     # Parse spec nodes (API already returns only the queried spec's nodes)
     for node in raw.get('spec_talent_nodes', []):
         if isinstance(node, dict):
             parsed_node = _parse_node(node)
-            if parsed_node['entries'] and any(e.get('name') and e['name'] != '?' for e in parsed_node['entries']):
-                result['spec_nodes'].append(parsed_node)
-            else:
-                print(f"[engine] Skipping empty node id={parsed_node['id']} row={parsed_node['row']} col={parsed_node['col']}", file=sys.stderr)
+            result['spec_nodes'].append(parsed_node)
 
     # Parse hero talent trees — filter to only include trees for the active spec
     hero_raw = raw.get('hero_talent_trees', [])
