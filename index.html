@@ -528,148 +528,85 @@ let _talentTooltipEl = null;     // Shared tooltip element
 
 // ── Build String Decoder ────────────────────────────────────────────
 
+/* index.html - Replace BitReader and decodeBuildString */
+
 class BitReader {
   constructor(bytes) {
-    this.bytes = bytes;
-    this.byteIdx = 0;
-    this.bitIdx = 0;
+    this.data = bytes;
+    this.bitPos = 0;
   }
-  readBits(count) {
-    let result = 0;
-    for (let i = 0; i < count; i++) {
-      if (this.byteIdx >= this.bytes.length) return result;
-      const bit = (this.bytes[this.byteIdx] >> (7 - this.bitIdx)) & 1;
-      result = (result << 1) | bit;
-      this.bitIdx++;
-      if (this.bitIdx >= 8) { this.bitIdx = 0; this.byteIdx++; }
+  read(bits) {
+    let val = 0;
+    for (let i = 0; i < bits; i++) {
+      const byteIdx = this.bitPos >> 3;
+      const bitIdx = this.bitPos & 7;
+      if (this.data[byteIdx] & (1 << bitIdx)) val |= (1 << i);
+      this.bitPos++;
     }
-    return result;
+    return val;
   }
-  get remaining() { return (this.bytes.length - this.byteIdx) * 8 - this.bitIdx; }
+  get remaining() { return (this.data.length * 8) - this.bitPos; }
 }
 
 function decodeBuildString(exportString, classNodes, specNodes, heroTrees) {
-  /**
-   * WoW Talent Export Decoder — tries both known bit formats and picks the one
-   * that produces a valid result (30-60 selected talents for a full build).
-   */
   const result = { selections: {}, activeHeroTreeName: null };
-  if (!exportString || exportString.length < 10) return result;
+  if (!exportString) return result;
+
   try {
     let b64 = exportString.trim().replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4 !== 0) b64 += '=';
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const bytes = new Uint8Array(atob(b64).split("").map(c => c.charCodeAt(0)));
+    const reader = new BitReader(bytes);
 
-    const allNodes = [...classNodes, ...specNodes];
+    // 1. Skip Header (152 bits)
+    if (reader.remaining < 152) return result;
+    reader.read(152);
 
-    // Try both approaches and pick the one that gives 30-60 selections
-    const approaches = [
-      { name: 'A_always_partial', alwaysPartial: true },
-      { name: 'B_multi_only',     alwaysPartial: false },
-    ];
-
-    let bestResult = null, bestName = '';
-    for (const approach of approaches) {
-      const reader = new BitReader(bytes);
-      reader.readBits(8);   // version
-      reader.readBits(16);  // specId
-      reader.readBits(128); // hash
-
-      const sels = {};
-      let valid = true;
-      for (const node of allNodes) {
+    const processBlock = (nodes) => {
+      const sorted = [...nodes].sort((a, b) => a.id - b.id);
+      for (const node of sorted) {
         if (reader.remaining < 1) break;
-        const isSelected = reader.readBits(1);
-        if (isSelected) {
-          let rank = node.max_ranks;
+
+        if (reader.read(1)) { // Node is selected
+          let rank = node.max_ranks || 1;
           let choice = -1;
 
-          if (approach.alwaysPartial || node.max_ranks > 1) {
-            if (reader.remaining < 1) { valid = false; break; }
-            const isPartial = reader.readBits(1);
-            if (isPartial) {
-              const bits = Math.ceil(Math.log2(node.max_ranks + 1));
-              if (bits > 0 && reader.remaining >= bits) {
-                rank = reader.readBits(bits);
-                if (rank === 0) rank = 1;
-              }
-            }
-          }
-
           if (node.type === 'CHOICE') {
-            if (reader.remaining < 1) { valid = false; break; }
-            choice = reader.readBits(1);
-          }
-          sels[node.id] = { rank, choice };
-        }
-      }
-
-      const count = Object.keys(sels).length;
-      const bitsLeft = reader.remaining;
-      console.log(`[Talents] Decode ${approach.name}: ${count} selected, ${bitsLeft} bits left, valid=${valid}`);
-
-      // A good decode: 25-65 selections, few bits remaining, didn't run out
-      if (valid && count >= 25 && count <= 70 && bitsLeft < 30) {
-        if (!bestResult || Math.abs(count - 45) < Math.abs(Object.keys(bestResult).length - 45)) {
-          bestResult = sels;
-          bestName = approach.name;
-        }
-      }
-    }
-
-    // Fallback: if neither approach was ideal, pick the one with more selections
-    if (!bestResult) {
-      console.warn('[Talents] Neither approach ideal, retrying with relaxed criteria');
-      for (const approach of approaches) {
-        const reader = new BitReader(bytes);
-        reader.readBits(8); reader.readBits(16); reader.readBits(128);
-        const sels = {};
-        for (const node of allNodes) {
-          if (reader.remaining < 1) break;
-          const isSelected = reader.readBits(1);
-          if (isSelected) {
-            let rank = node.max_ranks, choice = -1;
-            if (approach.alwaysPartial || node.max_ranks > 1) {
-              if (reader.remaining < 1) break;
-              const isPartial = reader.readBits(1);
-              if (isPartial) {
-                const bits = Math.ceil(Math.log2(node.max_ranks + 1));
-                if (bits > 0 && reader.remaining >= bits) rank = reader.readBits(bits);
-              }
+            // CHOICE NODES: No partial bit. Immediately read index bits.
+            const entryCount = node.entries ? node.entries.length : 2;
+            const choiceBits = Math.ceil(Math.log2(entryCount)) || 1;
+            choice = reader.read(choiceBits);
+          } else if (node.max_ranks > 1) {
+            // RANK NODES: Read 1 bit to see if it's partially filled.
+            if (reader.read(1)) { 
+              const rankBits = Math.ceil(Math.log2(node.max_ranks)) || 1;
+              rank = reader.read(rankBits) || 1;
             }
-            if (node.type === 'CHOICE') {
-              if (reader.remaining >= 1) choice = reader.readBits(1);
-            }
-            sels[node.id] = { rank, choice };
           }
-        }
-        if (!bestResult || Object.keys(sels).length > Object.keys(bestResult).length) {
-          bestResult = sels;
-          bestName = approach.name;
+          result.selections[node.id] = { rank, choice };
         }
       }
-    }
+    };
 
-    result.selections = bestResult || {};
-    console.log(`[Talents] Winner: ${bestName} with ${Object.keys(result.selections).length} nodes`);
+    // 2. Decode Class Tree, then Spec Tree
+    processBlock(classNodes);
+    processBlock(specNodes);
 
-    // Determine active hero tree
-    if (heroTrees && heroTrees.length > 0) {
-      let bestTree = null, bestCount = 0;
-      for (const ht of heroTrees) {
-        if (!ht.nodes) continue;
-        const heroIds = new Set(ht.nodes.map(n => n.id));
-        const count = Object.keys(result.selections).filter(id => heroIds.has(parseInt(id))).length;
-        if (count > bestCount) { bestCount = count; bestTree = ht; }
+    // 3. Hero Tree Header (12 bits)
+    if (reader.remaining >= 12) {
+      const heroTreeId = reader.read(12);
+      if (heroTreeId > 0 && heroTrees) {
+        const activeTree = heroTrees.find(t => t.id === heroTreeId);
+        if (activeTree) {
+          result.activeHeroTreeName = activeTree.name;
+          processBlock(activeTree.nodes);
+        }
       }
-      if (bestTree) result.activeHeroTreeName = bestTree.name;
     }
 
     return result;
   } catch (e) {
-    console.error('[Talents] Decode error:', e);
+    console.error("Decode Error:", e);
     return result;
   }
 }
