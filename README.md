@@ -27,10 +27,8 @@ Started WoW not long ago and I found myself closing and opening WoWhead for buil
 - Profession tab
 - More???
 
-## App
-<img width="420" height="290"  alt="Screenshot 2026-02-12 170859" src="https://github.com/user-attachments/assets/452fef18-8acd-4bd1-a36f-7b43e2454bdc" />
-<img width="420" height="290" alt="Screenshot-2026-02-12-233246" src="https://github.com/user-attachments/assets/8928e393-822c-49d3-9eae-a147ce82d3aa" />
-<img width="420" height="290" alt="Screenshot-2026-02-12-233059" src="https://github.com/user-attachments/assets/153ed300-be97-4174-ab3c-a3824d309d87" />
+## Screenshots
+Coming soon!
 
 ## FaQ
 ***Q: Why Electron?*** <br />
