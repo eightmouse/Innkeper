@@ -16,15 +16,15 @@ Started WoW not long ago and I found myself closing and opening WoWhead for buil
 
 ## Features
 - Activities
-  - Raid
-  - Mythic +
-  - Expeditions
-  - World Quests
-  - Reset Timers
-- Character Equipment
-- Talents tab
-- Vault tab
-- Profession tab
+  - [x] Raid
+  - [x] Mythic +
+  - [x] Expeditions
+  - [x] World Quests
+  - [x] Reset Timers
+- [x] Character Equipment
+- [] Talents tab
+- [] Vault tab
+- [] Profession tab
 - More???
 
 ## Screenshots
