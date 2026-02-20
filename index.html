@@ -549,64 +549,82 @@ class BitReader {
 }
 
 function decodeBuildString(exportString, classNodes, specNodes, heroTrees) {
+  /**
+   * WoW Talent Export String Decoder (TWW format, LSB-first).
+   * Verified against simc sc_import.cpp and wowtools.
+   *
+   * Format: header(152) then for EACH node (class sorted by ID, then spec sorted by ID):
+   *   1 bit  : isSelected
+   *   If selected:
+   *     1 bit  : isPartialRank  (ALWAYS present, even for single-rank and choice nodes)
+   *     If partial: ceil(log2(max_ranks + 1)) bits for rank
+   *     If choice node: 1 bit for choice index
+   *
+   * spec_nodes includes hero nodes — no separate hero section in the bitstream.
+   * Active hero tree is determined by which tree has the most selected nodes.
+   */
   const result = { selections: {}, activeHeroTreeName: null };
   if (!exportString) return result;
 
   try {
     let b64 = exportString.trim().replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4 !== 0) b64 += '=';
-    const bytes = new Uint8Array(atob(b64).split("").map(c => c.charCodeAt(0)));
+    const bytes = new Uint8Array(atob(b64).split('').map(c => c.charCodeAt(0)));
     const reader = new BitReader(bytes);
 
-    // 1. Skip Header (152 bits)
+    // Header: version(8) + specId(16) + treeHash(128) = 152 bits
     if (reader.remaining < 152) return result;
     reader.read(152);
 
-    const processBlock = (nodes) => {
-      const sorted = [...nodes].sort((a, b) => a.id - b.id);
-      for (const node of sorted) {
-        if (reader.remaining < 1) break;
+    // One flat sequence: class nodes sorted by ID, then spec nodes sorted by ID
+    const allNodes = [
+      ...[...classNodes].sort((a, b) => a.id - b.id),
+      ...[...specNodes].sort((a, b) => a.id - b.id),
+    ];
 
-        if (reader.read(1)) { // Node is selected
-          let rank = node.max_ranks || 1;
-          let choice = -1;
+    for (const node of allNodes) {
+      if (reader.remaining < 1) break;
+      const isSelected = reader.read(1);
+      if (!isSelected) continue;
 
-          if (node.type === 'CHOICE') {
-            // CHOICE NODES: No partial bit. Immediately read index bits.
-            const entryCount = node.entries ? node.entries.length : 2;
-            const choiceBits = Math.ceil(Math.log2(entryCount)) || 1;
-            choice = reader.read(choiceBits);
-          } else if (node.max_ranks > 1) {
-            // RANK NODES: Read 1 bit to see if it's partially filled.
-            if (reader.read(1)) { 
-              const rankBits = Math.ceil(Math.log2(node.max_ranks)) || 1;
-              rank = reader.read(rankBits) || 1;
-            }
-          }
-          result.selections[node.id] = { rank, choice };
+      let rank = node.max_ranks || 1;
+      let choice = -1;
+
+      // Partial-rank bit is ALWAYS present for selected nodes
+      const isPartial = reader.read(1);
+      if (isPartial) {
+        const rankBits = Math.ceil(Math.log2((node.max_ranks || 1) + 1));
+        if (rankBits > 0) {
+          rank = reader.read(rankBits);
+          if (rank === 0) rank = 1;
         }
       }
-    };
 
-    // 2. Decode Class Tree, then Spec Tree
-    processBlock(classNodes);
-    processBlock(specNodes);
-
-    // 3. Hero Tree Header (12 bits)
-    if (reader.remaining >= 12) {
-      const heroTreeId = reader.read(12);
-      if (heroTreeId > 0 && heroTrees) {
-        const activeTree = heroTrees.find(t => t.id === heroTreeId);
-        if (activeTree) {
-          result.activeHeroTreeName = activeTree.name;
-          processBlock(activeTree.nodes);
-        }
+      // Choice index bit: only for choice nodes, comes AFTER partial
+      if (node.type === 'CHOICE') {
+        choice = reader.read(1);
       }
+
+      result.selections[node.id] = { rank, choice };
     }
 
+    // Determine active hero tree by counting which has the most selected nodes
+    if (heroTrees && heroTrees.length > 0) {
+      let bestTree = null, bestCount = 0;
+      for (const ht of heroTrees) {
+        if (!ht.nodes) continue;
+        const heroIds = new Set(ht.nodes.map(n => n.id));
+        const count = Object.keys(result.selections).filter(id => heroIds.has(parseInt(id))).length;
+        if (count > bestCount) { bestCount = count; bestTree = ht; }
+      }
+      if (bestTree) result.activeHeroTreeName = bestTree.name;
+    }
+
+    const sel = Object.keys(result.selections).length;
+    console.log(`[Talents] Decoded: ${sel} selected, hero=${result.activeHeroTreeName || 'none'}, ${reader.remaining} bits left`);
     return result;
   } catch (e) {
-    console.error("Decode Error:", e);
+    console.error('[Talents] Decode error:', e);
     return result;
   }
 }
