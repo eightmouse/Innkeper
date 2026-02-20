@@ -89,6 +89,12 @@
   color: #b03030;
 }
 
+[data-theme="light"] #talent-fetch-notify {
+  background: rgba(245, 252, 248, 0.95);
+  border: 1px solid rgba(58, 138, 80, 0.4);
+  color: #2a5a35;
+}
+
 [data-theme="light"] .modal {
   background: linear-gradient(175deg, #f5faf5 0%, #e8f0e8 100%);
   border: 1px solid rgba(58, 138, 80, 0.35);
@@ -746,32 +752,6 @@ body::before {
   transition: all 0.2s;
 }
 
-/* Equipment tab (1st) aligns with Activities section (240px) */
-.detail-tab:nth-child(1) {
-  flex: 0 0 240px;
-}
-
-/* Talents tab (2nd) aligns with Build Presets section (240px) */
-.detail-tab:nth-child(2) {
-  flex: 0 0 240px;
-}
-
-/* Vault tab (3rd) - fixed width */
-.detail-tab:nth-child(3) {
-  flex: 0 0 180px;
-}
-
-/* Professions tab (4th) - fixed width */
-.detail-tab:nth-child(4) {
-  flex: 0 0 200px;
-}
-
-/* Spacer to fill remaining width */
-.tab-spacer {
-  flex: 1;
-  background: rgba(0,0,0,0.2);
-  border-bottom: 2px solid transparent;
-}
 
 .detail-tab:hover {
   background: rgba(58, 138, 80, 0.08);
@@ -1599,3 +1579,37 @@ body::before {
 }
 #toast.show  { opacity: 1; transform: translateX(-50%) translateY(0); }
 #toast.error { border-color: rgba(180, 50, 50, 0.5); color: #f08080; }
+
+#talent-fetch-notify {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(10, 20, 12, 0.95);
+  border: 1px solid rgba(58, 138, 80, 0.3);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#talent-fetch-notify.show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+#talent-fetch-notify .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(58, 138, 80, 0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
