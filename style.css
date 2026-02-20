@@ -1596,8 +1596,8 @@ body::before {
   pointer-events: none;
   z-index: 200;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
 }
 #talent-fetch-notify.show {
   opacity: 1;

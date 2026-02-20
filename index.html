@@ -526,15 +526,29 @@ let _currentTalentChar = null;   // Currently displayed character
 let _currentBuildType = 'raid';  // Current active preset
 let _talentTooltipEl = null;     // Shared tooltip element
 let _talentFetchInProgress = false; // True while talent tree is being fetched
+let _equipFetchInProgress = false;  // True while equipment is being fetched
 
-function showTalentFetchNotify(msg) {
-  const el = document.getElementById('talent-fetch-notify');
-  el.innerHTML = `<div class="spinner"></div><span>${msg}</span>`;
-  el.classList.add('show');
+const _activeFetches = {};  // key → message, for bottom-right notification
+
+function showFetchNotify(key, msg) {
+  _activeFetches[key] = msg;
+  _updateFetchNotify();
 }
 
-function hideTalentFetchNotify() {
-  document.getElementById('talent-fetch-notify').classList.remove('show');
+function hideFetchNotify(key) {
+  delete _activeFetches[key];
+  _updateFetchNotify();
+}
+
+function _updateFetchNotify() {
+  const el = document.getElementById('talent-fetch-notify');
+  const msgs = Object.values(_activeFetches);
+  if (msgs.length === 0) {
+    el.classList.remove('show');
+    return;
+  }
+  el.innerHTML = msgs.map(m => `<div style="display:flex;align-items:center;gap:8px;"><div class="spinner"></div><span>${m}</span></div>`).join('');
+  el.classList.add('show');
 }
 
 // ── Build String Decoder ────────────────────────────────────────────
@@ -764,14 +778,14 @@ function loadTalents(char) {
     <span style="font-size:10px;color:var(--text-muted);margin-top:4px;">(First load — cached after)</span>
   </div>`;
   _talentFetchInProgress = true;
-  showTalentFetchNotify(`Fetching ${capitalize(char.spec_slug)} ${capitalize(char.class_slug)} talents…`);
+  showFetchNotify('talents', `Fetching ${capitalize(char.spec_slug)} ${capitalize(char.class_slug)} talents…`);
   sendToPython(`FETCH_TALENT_TREE:${char.region}:${char.class_slug}:${char.spec_slug}`);
 
   // Client-side timeout — generous for first load (icon fetching takes time)
   const timeoutId = setTimeout(() => {
     if (_currentTalentChar === char && !TALENT_TREE_CACHE[cacheKey]) {
       _talentFetchInProgress = false;
-      hideTalentFetchNotify();
+      hideFetchNotify('talents');
       view.innerHTML = `
         <div class="talent-empty">
           <p>Request timed out.</p>
@@ -886,8 +900,29 @@ function renderTalentTree(treeData, char) {
     if (ht.name === activeHeroTreeName) activeHeroTree = ht;
   }
   if (!activeHeroTree && heroTrees.length > 0) activeHeroTree = heroTrees[0];
-  const pureSpecNodes = specNodes.filter(n => !allHeroNodeIds.has(n.id));
-  const heroNodes = activeHeroTree ? activeHeroTree.nodes : [];
+  let heroNodes = activeHeroTree ? [...activeHeroTree.nodes] : [];
+
+  // Move spec nodes that spatially overlap with the hero tree into the hero section.
+  // Some specs (e.g. Devourer DH) have spec nodes positioned in the hero area.
+  let pureSpecNodes;
+  if (heroNodes.length > 0) {
+    let hMinX = Infinity, hMaxX = -Infinity;
+    for (const n of heroNodes) { hMinX = Math.min(hMinX, n.pos_x); hMaxX = Math.max(hMaxX, n.pos_x); }
+    const heroNodeIdSet = new Set(heroNodes.map(n => n.id));
+    const overlapNodes = specNodes.filter(n =>
+      !allHeroNodeIds.has(n.id) && !heroNodeIdSet.has(n.id) &&
+      n.pos_x >= hMinX && n.pos_x <= hMaxX
+    );
+    if (overlapNodes.length > 0) {
+      heroNodes = heroNodes.concat(overlapNodes);
+      const heroSet = new Set(heroNodes.map(n => n.id));
+      pureSpecNodes = specNodes.filter(n => !heroSet.has(n.id));
+    } else {
+      pureSpecNodes = specNodes.filter(n => !allHeroNodeIds.has(n.id));
+    }
+  } else {
+    pureSpecNodes = specNodes.filter(n => !allHeroNodeIds.has(n.id));
+  }
 
   // Calculate flex from visible node position spans
   const visibleSpan = (nodes) => {
@@ -1056,10 +1091,12 @@ function loadEquipment(char) {
     // Trigger background refresh if cache is stale
     sendToPython(`GET_EQUIPMENT:${char.region}:${char.realm}:${char.name}`);
   } else {
-    // No cache - show loading spinner
+    // No cache - show loading spinner and notification
     document.getElementById('equip-left').innerHTML  = '';
     document.getElementById('equip-right').innerHTML = '';
     loadingEl.style.display = 'flex';
+    _equipFetchInProgress = true;
+    showFetchNotify('equipment', `Fetching equipment for ${capitalize(char.name)}…`);
     sendToPython(`GET_EQUIPMENT:${char.region}:${char.realm}:${char.name}`);
   }
 }
@@ -1188,8 +1225,8 @@ const addModal  = document.getElementById('add-modal');
 const inputName = document.getElementById('input-name');
 
 document.getElementById('add-btn').addEventListener('click', () => {
-  if (_talentFetchInProgress) {
-    showToast('Wait for talents to be fetched first');
+  if (_talentFetchInProgress || _equipFetchInProgress) {
+    showToast('Wait for data to finish fetching first');
     return;
   }
   addModal.classList.add('open');
@@ -1312,13 +1349,15 @@ if (ipcRenderer) {
         realmCache[data.region] = data.realms;
         if (data.region === inputRegion.value) showRealmSuggestions(realmInput.value);
       } else if (data.status === 'equipment') {
+        _equipFetchInProgress = false;
+        hideFetchNotify('equipment');
         renderEquipment(data.items);
       } else if (data.status === 'equipment_refreshing') {
         showEquipmentRefreshing();
       } else if (data.status === 'talent_tree') {
         // Received talent tree data from Blizzard API
         _talentFetchInProgress = false;
-        hideTalentFetchNotify();
+        hideFetchNotify('talents');
         if (window._talentLoadTimeout) { clearTimeout(window._talentLoadTimeout); window._talentLoadTimeout = null; }
         window._talentRetried = false;
         const cacheKey = `${data.class_slug}_${data.spec_slug}`;
@@ -1347,7 +1386,7 @@ if (ipcRenderer) {
         }
         window._talentRetried = false;
         _talentFetchInProgress = false;
-        hideTalentFetchNotify();
+        hideFetchNotify('talents');
         // If talent tab is currently open for this class/spec, show error
         if (_currentTalentChar &&
             _currentTalentChar.class_slug === data.class_slug &&
