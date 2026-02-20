@@ -16,21 +16,22 @@ Started WoW not long ago and I found myself closing and opening WoWhead for buil
 
 ## Features
 - Activities
-  - Raid
-  - Mythic +
-  - Expeditions
-  - World Quests
-  - Reset Timers
-- Character Equipment
-- Talents tab
-- Vault tab
-- Profession tab
+  - [x] Raid
+  - [x] Mythic +
+  - [x] Expeditions
+  - [x] World Quests
+  - [x] Reset Timers
+- [x] Character Equipment
+- [ ] Talents tab
+- [ ] Vault tab
+- [ ] Profession tab
 - More???
 
-## App
-<img width="420" height="290"  alt="Screenshot 2026-02-12 170859" src="https://github.com/user-attachments/assets/452fef18-8acd-4bd1-a36f-7b43e2454bdc" />
-<img width="420" height="290" alt="Screenshot-2026-02-12-233246" src="https://github.com/user-attachments/assets/8928e393-822c-49d3-9eae-a147ce82d3aa" />
-<img width="420" height="290" alt="Screenshot-2026-02-12-233059" src="https://github.com/user-attachments/assets/153ed300-be97-4174-ab3c-a3824d309d87" />
+## Screenshots
+<img width="400" height="640" alt="1" src="https://github.com/user-attachments/assets/51c84e45-74de-4a02-8894-e40259e16efb" />
+<img width="400" height="640" alt="2" src="https://github.com/user-attachments/assets/8552477b-6ea7-42dd-b200-8798aa67817f" />
+<img width="400" height="640" alt="3" src="https://github.com/user-attachments/assets/ea38203a-d11e-4e90-bb56-fcc6bcada0f9" />
+<img width="400" height="640" alt="4" src="https://github.com/user-attachments/assets/f1bfee97-f137-402e-b312-e31e3a5a558d" />
 
 ## FaQ
 ***Q: Why Electron?*** <br />
