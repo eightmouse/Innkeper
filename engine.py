@@ -375,8 +375,7 @@ def fetch_talent_tree(region, class_slug, spec_slug):
     if not token:
         raise ConnectionError(f"Failed to get Blizzard API token for region '{region}'. Check BLIZZARD_CLIENT_ID and BLIZZARD_CLIENT_SECRET in your .env file.")
 
-    # Step 1: Get spec info to find the talent tree ID
-    print(f"[engine] Step 1/3: Fetching spec info for {class_slug}/{spec_slug} (id={spec_id})…", file=sys.stderr)
+    # Get spec info to find the talent tree ID
     r = requests.get(
         f"https://{region}.api.blizzard.com/data/wow/playable-specialization/{spec_id}",
         params={"namespace": f"static-{region}", "locale": "en_US"},
@@ -426,10 +425,7 @@ def fetch_talent_tree(region, class_slug, spec_slug):
     if not tree_id:
         raise ValueError(f"Step 1: Could not extract tree ID. spec_talent_tree value: {spec_tree_ref}")
     
-    print(f"[engine] Found tree_id={tree_id} for {class_slug}/{spec_slug}", file=sys.stderr)
-
-    # Step 2: Fetch the full talent tree
-    print(f"[engine] Step 2/3: Fetching talent tree {tree_id} for spec {spec_id}…", file=sys.stderr)
+    # Fetch the spec-filtered talent tree
     r2 = requests.get(
         f"https://{region}.api.blizzard.com/data/wow/talent-tree/{tree_id}/playable-specialization/{spec_id}",
         params={"namespace": f"static-{region}", "locale": "en_US"},
@@ -441,38 +437,56 @@ def fetch_talent_tree(region, class_slug, spec_slug):
 
     raw_tree = r2.json()
 
-    # Dump FULL raw response for debugging (helps diagnose filtering issues)
-    try:
-        debug_file = os.path.join(basedir, 'talent_tree_debug_raw.json')
-        with open(debug_file, 'w', encoding='utf-8') as f:
-            json.dump(raw_tree, f, indent=2, ensure_ascii=False, default=str)
-        print(f"[engine] Full raw API dump → {debug_file}", file=sys.stderr)
-        
-        # Log structure summary
-        class_nodes_raw = raw_tree.get('class_talent_nodes', [])
-        spec_nodes_raw = raw_tree.get('spec_talent_nodes', [])
-        hero_trees_raw = raw_tree.get('hero_talent_trees', [])
-        print(f"[engine]   Raw counts: {len(class_nodes_raw)} class_talent_nodes, {len(spec_nodes_raw)} spec_talent_nodes, {len(hero_trees_raw) if isinstance(hero_trees_raw, list) else '?'} hero_talent_trees", file=sys.stderr)
-        
-        # Check if spec_talent_nodes contain a playable_specialization field
-        if spec_nodes_raw and isinstance(spec_nodes_raw[0], dict):
-            sample_keys = list(spec_nodes_raw[0].keys())
-            print(f"[engine]   Sample spec node keys: {sample_keys}", file=sys.stderr)
-    except Exception as e:
-        print(f"[engine] Debug dump failed: {e}", file=sys.stderr)
+    # Collect ALL node IDs across every spec of this class (export string encodes the full tree).
+    # Fetch each sibling spec's tree and merge node IDs for complete coverage.
+    all_node_ids = set()
+    def _collect_node_ids(tree_json):
+        for node in tree_json.get('class_talent_nodes', []):
+            if isinstance(node, dict) and 'id' in node:
+                all_node_ids.add(node['id'])
+        for node in tree_json.get('spec_talent_nodes', []):
+            if isinstance(node, dict) and 'id' in node:
+                all_node_ids.add(node['id'])
+        for ht in tree_json.get('hero_talent_trees', []):
+            if isinstance(ht, dict):
+                for node in ht.get('hero_talent_nodes', []):
+                    if isinstance(node, dict) and 'id' in node:
+                        all_node_ids.add(node['id'])
 
-    # Step 3: Parse into a simpler format (pass spec_id for filtering)
+    # Start with the current spec's raw response
+    _collect_node_ids(raw_tree)
+
+    # Fetch sibling specs to get their unique node IDs
+    sibling_specs = SPEC_IDS.get(class_slug, {})
+    for sib_slug, sib_id in sibling_specs.items():
+        if sib_id == spec_id:
+            continue
+        try:
+            r_sib = requests.get(
+                f"https://{region}.api.blizzard.com/data/wow/talent-tree/{tree_id}/playable-specialization/{sib_id}",
+                params={"namespace": f"static-{region}", "locale": "en_US"},
+                headers=_headers(token),
+                timeout=15,
+            )
+            if r_sib.status_code == 200:
+                _collect_node_ids(r_sib.json())
+        except Exception:
+            pass
+
+    all_node_ids_sorted = sorted(all_node_ids)
+
+    # Parse into a simpler format (pass spec_id for filtering)
     parsed = _parse_talent_tree(raw_tree, spec_id)
+    parsed['all_node_ids'] = all_node_ids_sorted
     class_count = len(parsed.get('class_nodes', []))
     spec_count = len(parsed.get('spec_nodes', []))
     hero_count = sum(len(ht.get('nodes', [])) for ht in parsed.get('hero_trees', []))
-    print(f"[engine] Step 3/3: Parsed {class_count} class + {spec_count} spec + {hero_count} hero nodes", file=sys.stderr)
+    print(f"[engine] Talent tree: {class_count} class + {spec_count} spec + {hero_count} hero nodes ({len(all_node_ids_sorted)} total IDs)", file=sys.stderr)
 
     if class_count == 0 and spec_count == 0:
         raise ValueError(f"Parsed tree has 0 nodes. Raw tree keys: {list(raw_tree.keys())}")
 
-    # Step 4: Fetch spell icons for all entries (parallel)
-    print(f"[engine] Fetching spell icons…", file=sys.stderr)
+    # Fetch spell icons for all entries
     _attach_spell_icons(parsed, region, token)
 
     # Cache to disk
@@ -593,7 +607,6 @@ def _parse_talent_tree(raw, active_spec_id=None):
                         if sid is not None:
                             spec_ids_in_tree.add(int(sid))
                 if spec_ids_in_tree and active_spec_id not in spec_ids_in_tree:
-                    print(f"[engine] Skipping hero tree '{ht.get('name', '?')}' (not for spec {active_spec_id})", file=sys.stderr)
                     continue
 
             hero = {
@@ -602,8 +615,6 @@ def _parse_talent_tree(raw, active_spec_id=None):
                 'nodes': [_parse_node(n) for n in hero_nodes_raw if isinstance(n, dict)]
             }
             result['hero_trees'].append(hero)
-
-    print(f"[engine] Parsed: {len(result['class_nodes'])} class, {len(result['spec_nodes'])} spec, {len(result['hero_trees'])} hero trees ({', '.join(ht['name'] for ht in result['hero_trees'])})", file=sys.stderr)
 
     # Sort by ID (critical for build string decoding)
     result['class_nodes'].sort(key=lambda n: n['id'])
