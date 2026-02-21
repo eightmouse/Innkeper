@@ -6,6 +6,17 @@ const { spawn } = require('child_process');
 let win;
 let pyProcess;
 
+// ── Packaging helpers ────────────────────────────────────────────────
+const isPackaged = app.isPackaged;
+
+function getDataDir() {
+  return isPackaged ? app.getPath('userData') : __dirname;
+}
+
+function getBuildsFile() {
+  return path.join(getDataDir(), 'talent_builds.json');
+}
+
 // ── Icon: try multiple formats ──────────────────────────────────────
 function getIconPath() {
   const names = ['icon.png', 'icon.ico', 'icon.icns', 'logo.png', 'logo.ico',
@@ -23,6 +34,24 @@ function getIconPath() {
   }
   console.log('[Main] No icon found. Place icon.png in app root directory.');
   return undefined;
+}
+
+// ── Data seeding (first-run: copy bundled files to userData) ─────────
+function seedDataFiles() {
+  if (!isPackaged) return;
+
+  const dataDir = getDataDir();
+  fs.mkdirSync(dataDir, { recursive: true });
+
+  // Copy talent_builds.json from resources to userData on first run
+  const destBuilds = path.join(dataDir, 'talent_builds.json');
+  if (!fs.existsSync(destBuilds)) {
+    const srcBuilds = path.join(process.resourcesPath, 'talent_builds.json');
+    if (fs.existsSync(srcBuilds)) {
+      fs.copyFileSync(srcBuilds, destBuilds);
+      console.log('[Main] Seeded talent_builds.json →', destBuilds);
+    }
+  }
 }
 
 // ── Window ──────────────────────────────────────────────────────────
@@ -45,15 +74,17 @@ function createWindow() {
   });
 
   win.loadFile('index.html');
+  seedDataFiles();
   startPython();
 
   // Wait for renderer to be ready before sending data
   win.webContents.once('did-finish-load', () => {
     // Step 1: Send build strings FIRST (must be in TALENT_BUILDS before trees render)
+    const buildsFile = getBuildsFile();
     try {
       let builds = {};
-      if (fs.existsSync(BUILDS_FILE)) {
-        const raw = JSON.parse(fs.readFileSync(BUILDS_FILE, 'utf-8'));
+      if (fs.existsSync(buildsFile)) {
+        const raw = JSON.parse(fs.readFileSync(buildsFile, 'utf-8'));
         // Strip keys starting with _ (like _README, _example_format)
         for (const key of Object.keys(raw)) {
           if (!key.startsWith('_')) builds[key] = raw[key];
@@ -69,7 +100,7 @@ function createWindow() {
 
     // Step 2: Pre-load disk-cached talent trees (TALENT_BUILDS is already set above)
     try {
-      const cacheDir = path.join(__dirname, 'talent_tree_cache');
+      const cacheDir = path.join(getDataDir(), 'talent_tree_cache');
       if (fs.existsSync(cacheDir)) {
         const files = fs.readdirSync(cacheDir).filter(f => f.endsWith('.json'));
         for (const file of files) {
@@ -98,12 +129,35 @@ function createWindow() {
 
 // ── Python backend ──────────────────────────────────────────────────
 function startPython() {
-  const script = path.join(__dirname, 'engine.py');
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-  pyProcess = spawn(pythonCmd, [script], {
-    cwd: __dirname,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+  const dataDir = getDataDir();
+
+  if (isPackaged) {
+    // Packaged: run the bundled engine executable
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    const enginePath = path.join(process.resourcesPath, 'engine' + ext);
+
+    // Ensure engine is executable on Linux
+    if (process.platform !== 'win32') {
+      try { fs.chmodSync(enginePath, 0o755); } catch (e) {}
+    }
+
+    // Ensure data dir exists
+    fs.mkdirSync(dataDir, { recursive: true });
+
+    pyProcess = spawn(enginePath, ['--datadir', dataDir], {
+      cwd: dataDir,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    console.log('[Main] Spawned packaged engine:', enginePath, '--datadir', dataDir);
+  } else {
+    // Dev: run python engine.py as before
+    const script = path.join(__dirname, 'engine.py');
+    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+    pyProcess = spawn(pythonCmd, [script], {
+      cwd: __dirname,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  }
 
   let buffer = '';
   let ready = false;
@@ -132,7 +186,6 @@ function startPython() {
 }
 
 // ── IPC ─────────────────────────────────────────────────────────────
-const BUILDS_FILE = path.join(__dirname, 'talent_builds.json');
 
 ipcMain.on('to-python', (_, cmd) => {
   // Intercept build-string saves (handled by main, not Python)
@@ -142,15 +195,16 @@ ipcMain.on('to-python', (_, cmd) => {
     if (parts.length >= 5) {
       const [, classSlug, specSlug, buildType, ...rest] = parts;
       const buildString = rest.join(':'); // in case string contains ':'
+      const buildsFile = getBuildsFile();
       try {
         let builds = {};
-        if (fs.existsSync(BUILDS_FILE)) {
-          builds = JSON.parse(fs.readFileSync(BUILDS_FILE, 'utf-8'));
+        if (fs.existsSync(buildsFile)) {
+          builds = JSON.parse(fs.readFileSync(buildsFile, 'utf-8'));
         }
         if (!builds[classSlug]) builds[classSlug] = {};
         if (!builds[classSlug][specSlug]) builds[classSlug][specSlug] = {};
         builds[classSlug][specSlug][buildType] = buildString;
-        fs.writeFileSync(BUILDS_FILE, JSON.stringify(builds, null, 2));
+        fs.writeFileSync(buildsFile, JSON.stringify(builds, null, 2));
         console.log(`[Main] Saved build string: ${classSlug}/${specSlug}/${buildType}`);
         win?.webContents.send('from-python', JSON.stringify({
           status: 'build_string_saved',
