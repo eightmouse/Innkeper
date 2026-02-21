@@ -894,35 +894,29 @@ function renderTalentTree(treeData, char) {
   // Split spec_nodes into hero display + pure spec
   const allHeroNodeIds = new Set();
   let activeHeroTree = null;
+  // Collect all hero talent names (from all trees) to detect duplicate spec nodes
+  const allHeroEntryNames = new Set();
   for (const ht of heroTrees) {
     if (!ht.nodes) continue;
-    for (const n of ht.nodes) allHeroNodeIds.add(n.id);
+    for (const n of ht.nodes) {
+      allHeroNodeIds.add(n.id);
+      for (const e of (n.entries || [])) if (e.name) allHeroEntryNames.add(e.name);
+    }
     if (ht.name === activeHeroTreeName) activeHeroTree = ht;
   }
   if (!activeHeroTree && heroTrees.length > 0) activeHeroTree = heroTrees[0];
   let heroNodes = activeHeroTree ? [...activeHeroTree.nodes] : [];
 
-  // Move spec nodes that spatially overlap with the hero tree into the hero section.
-  // Some specs (e.g. Devourer DH) have spec nodes positioned in the hero area.
-  let pureSpecNodes;
-  if (heroNodes.length > 0) {
-    let hMinX = Infinity, hMaxX = -Infinity;
-    for (const n of heroNodes) { hMinX = Math.min(hMinX, n.pos_x); hMaxX = Math.max(hMaxX, n.pos_x); }
-    const heroNodeIdSet = new Set(heroNodes.map(n => n.id));
-    const overlapNodes = specNodes.filter(n =>
-      !allHeroNodeIds.has(n.id) && !heroNodeIdSet.has(n.id) &&
-      n.pos_x >= hMinX && n.pos_x <= hMaxX
-    );
-    if (overlapNodes.length > 0) {
-      heroNodes = heroNodes.concat(overlapNodes);
-      const heroSet = new Set(heroNodes.map(n => n.id));
-      pureSpecNodes = specNodes.filter(n => !heroSet.has(n.id));
-    } else {
-      pureSpecNodes = specNodes.filter(n => !allHeroNodeIds.has(n.id));
+  // Filter spec nodes: remove hero tree nodes by ID, and also remove spec nodes
+  // that are name-duplicates of hero tree talents (e.g. Devourer DH has spec nodes
+  // with identical names/positions as Void-Scarred hero nodes — they're vestigial).
+  const pureSpecNodes = specNodes.filter(n => {
+    if (allHeroNodeIds.has(n.id)) return false;
+    if (allHeroEntryNames.size > 0 && n.entries && n.entries.length > 0) {
+      if (n.entries.every(e => allHeroEntryNames.has(e.name))) return false;
     }
-  } else {
-    pureSpecNodes = specNodes.filter(n => !allHeroNodeIds.has(n.id));
-  }
+    return true;
+  });
 
   // Calculate flex from visible node position spans
   const visibleSpan = (nodes) => {
