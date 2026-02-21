@@ -246,6 +246,19 @@ let ipcRenderer;
 try { ({ ipcRenderer } = require('electron')); }
 catch (e) { console.warn('No Electron IPC'); }
 
+const _fs   = typeof require !== 'undefined' ? require('fs')   : null;
+const _path = typeof require !== 'undefined' ? require('path') : null;
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function sendToPython(cmd) {
   if (ipcRenderer) ipcRenderer.send('to-python', cmd);
   else console.log('[→ Python mock]', cmd);
@@ -372,11 +385,11 @@ function renderGrid() {
     }
 
     const specLine = (char.class_name || char.spec_name)
-      ? `<div class="card-spec">${[char.spec_name, char.class_name].filter(Boolean).join(' · ')}</div>`
+      ? `<div class="card-spec">${[char.spec_name, char.class_name].filter(Boolean).map(escapeHtml).join(' · ')}</div>`
       : '';
 
     const pips = Object.entries(char.activities || {}).map(([name, data]) =>
-      `<div class="activity-pip ${data.status === 'completed' ? 'done' : 'available'}" title="${name}"></div>`
+      `<div class="activity-pip ${data.status === 'completed' ? 'done' : 'available'}" title="${escapeHtml(name)}"></div>`
     ).join('');
 
     card.innerHTML = `
@@ -387,8 +400,8 @@ function renderGrid() {
         <svg viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
       <div class="card-info">
-        <div class="card-name">${char.name} <span class="card-level">${char.level}</span></div>
-        <div class="card-realm">${char.realm}</div>
+        <div class="card-name">${escapeHtml(char.name)} <span class="card-level">${escapeHtml(char.level)}</span></div>
+        <div class="card-realm">${escapeHtml(char.realm)}</div>
         ${specLine}
         <div class="card-activities">${pips}</div>
       </div>
@@ -467,12 +480,12 @@ function openDetail(idx) {
     row.className = 'activity-row';
     row.innerHTML = `
       <div class="activity-row-left">
-        ${iconUrl 
-          ? `<img src="${iconUrl}" class="activity-icon-img" alt="${name}" />`
+        ${iconUrl
+          ? `<img src="${iconUrl}" class="activity-icon-img" alt="${escapeHtml(name)}" />`
           : `<span class="activity-icon">•</span>`
         }
-        <span class="activity-label">${name}</span>
-        <span class="activity-reset-tag">${data.reset}</span>
+        <span class="activity-label">${escapeHtml(name)}</span>
+        <span class="activity-reset-tag">${escapeHtml(data.reset)}</span>
       </div>
       <label class="toggle">
         <input type="checkbox" ${checked ? 'checked' : ''} />
@@ -718,15 +731,15 @@ function showTalentTooltip(e, node, selections) {
       const isActive = sel && sel.choice === i;
       const arrow = isActive ? '▸ ' : '  ';
       const style = isActive ? 'color:var(--accent);font-weight:600;' : '';
-      choiceHtml += `<div style="${style}">${arrow}${ent.name}</div>`;
+      choiceHtml += `<div style="${style}">${arrow}${escapeHtml(ent.name)}</div>`;
     });
     choiceHtml += '</div>';
   }
 
   _talentTooltipEl.innerHTML = `
-    <div class="talent-tooltip-name">${entry.name}</div>
+    <div class="talent-tooltip-name">${escapeHtml(entry.name)}</div>
     ${metaHtml}${rankText}
-    <div class="talent-tooltip-desc">${entry.description || ''}</div>
+    <div class="talent-tooltip-desc">${escapeHtml(entry.description || '')}</div>
     ${choiceHtml}
   `;
   _talentTooltipEl.classList.add('visible');
@@ -871,10 +884,9 @@ function renderTalentTree(treeData, char) {
 
   // Live-reload talent_builds.json for freshest data
   try {
-    const fs = require('fs');
-    const buildsFile = require('path').join(__dirname, 'talent_builds.json');
-    if (fs.existsSync(buildsFile)) {
-      const raw = JSON.parse(fs.readFileSync(buildsFile, 'utf-8'));
+    const buildsFile = _path.join(__dirname, 'talent_builds.json');
+    if (_fs.existsSync(buildsFile)) {
+      const raw = JSON.parse(_fs.readFileSync(buildsFile, 'utf-8'));
       const builds = {};
       for (const k of Object.keys(raw)) { if (!k.startsWith('_')) builds[k] = raw[k]; }
       TALENT_BUILDS = builds;
