@@ -275,27 +275,6 @@ body::before {
 .win-btn:hover       { background: rgba(255,255,255,0.07); color: rgba(160, 200, 168, 0.95); }
 .win-btn.close:hover { background: #c42b2b; color: #fff; }
 
-#window-controls {
-  display: flex;
-  align-items: stretch;
-  -webkit-app-region: no-drag;
-}
-
-.win-btn {
-  width: 46px;
-  height: 100%;
-  border: none;
-  background: transparent;
-  color: rgba(160, 200, 168, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.win-btn:hover       { background: rgba(255,255,255,0.07); color: rgba(160, 200, 168, 0.95); }
-.win-btn.close:hover { background: #c42b2b; color: #fff; }
-
 /* ── Main content ────────────────────────────── */
 #content {
   flex: 1;
@@ -1295,26 +1274,17 @@ body::before {
   overflow: hidden;
 }
 
-/* Equipment tab has the two-column layout */
-#panel-equipment {
-  display: none;
-  flex: 1;
-  overflow: hidden;
-}
-
-#panel-equipment.active {
-  display: flex;
-}
-
-/* Other tabs use full-width layout */
+/* Tab panels — hidden by default, flex when active */
+#panel-equipment,
 #panel-talents,
 #panel-vault,
 #panel-professions {
+  display: none;
   flex: 1;
   overflow: hidden;
-  display: none;
 }
 
+#panel-equipment.active,
 #panel-talents.active,
 #panel-vault.active,
 #panel-professions.active {
@@ -1612,4 +1582,3 @@ body::before {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
