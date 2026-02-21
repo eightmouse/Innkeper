@@ -44,7 +44,7 @@ Started WoW not long ago and I found myself closing and opening WoWhead for buil
 *A: Yes. When used correctly it's an amazing tool that provides help. I see it no differently than using StackOverflow or Google, with the difference that at least I'm not get bullied for asking/expressing myself poorly. If this bothers you I apologize, this app might not be for you.*
 
 ***Q: I'm on Linux/MacOS can I still use this app?*** <br />
-*A: Like Ronnie Coleman once said, 'YEAH BUDDY!'*
+*A: Like Ronnie Coleman once said, 'YEAH BUDDY!'. However, because of MacOS nature you have to compile it yourself!*
 
 ## Known bugs
 - Demon Hunter (Devourer) nodes/skills not displaying correctly.
