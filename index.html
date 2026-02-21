@@ -882,17 +882,6 @@ function setupTalentSidebar(char) {
 function renderTalentTree(treeData, char) {
   const view = document.getElementById('talent-tree-view');
 
-  // Live-reload talent_builds.json for freshest data
-  try {
-    const buildsFile = _path.join(__dirname, 'talent_builds.json');
-    if (_fs.existsSync(buildsFile)) {
-      const raw = JSON.parse(_fs.readFileSync(buildsFile, 'utf-8'));
-      const builds = {};
-      for (const k of Object.keys(raw)) { if (!k.startsWith('_')) builds[k] = raw[k]; }
-      TALENT_BUILDS = builds;
-    }
-  } catch(e) { /* ignore */ }
-
   const buildString = TALENT_BUILDS[char.class_slug]?.[char.spec_slug]?.[_currentBuildType] || '';
 
   const classNodes = treeData.class_nodes || [];
