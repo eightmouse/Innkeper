@@ -12,7 +12,7 @@ else:
     basedir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
 SERVER_URL = "https://innkeper.onrender.com"
-AUTH_KEY   = "InnkeeperApp-2026"
+AUTH_KEY   = "InnkeeperApp"
 DATA_FILE  = os.path.join(basedir, 'characters.json')
 
 # ============================================================
@@ -524,26 +524,38 @@ if __name__ != "__main__":
 _AUTH_HEADERS = {"X-Auth-Key": AUTH_KEY}
 
 def _server_get(path, timeout=30):
-    try:
-        r = requests.get(f"{SERVER_URL}{path}", headers=_AUTH_HEADERS, timeout=timeout)
-        if r.status_code == 200:
-            return r.json()
-        print(f"[engine] Server GET {path} → {r.status_code}: {r.text[:200]}", file=sys.stderr)
-        return None
-    except requests.RequestException as e:
-        print(f"[engine] Server GET {path} error: {e}", file=sys.stderr)
-        return None
+    import time as _time
+    for attempt in range(2):
+        try:
+            r = requests.get(f"{SERVER_URL}{path}", headers=_AUTH_HEADERS, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code == 403 and attempt == 0:
+                print(f"[engine] Server GET {path} → 403, retrying in 3s…", file=sys.stderr)
+                _time.sleep(3)
+                continue
+            print(f"[engine] Server GET {path} → {r.status_code}: {r.text[:200]}", file=sys.stderr)
+        except requests.RequestException as e:
+            print(f"[engine] Server GET {path} error: {e}", file=sys.stderr)
+        break
+    return None
 
 def _server_post(path, body, timeout=30):
-    try:
-        r = requests.post(f"{SERVER_URL}{path}", json=body, headers=_AUTH_HEADERS, timeout=timeout)
-        if r.status_code == 200:
-            return r.json()
-        print(f"[engine] Server POST {path} → {r.status_code}: {r.text[:200]}", file=sys.stderr)
-        return None
-    except requests.RequestException as e:
-        print(f"[engine] Server POST {path} error: {e}", file=sys.stderr)
-        return None
+    import time as _time
+    for attempt in range(2):
+        try:
+            r = requests.post(f"{SERVER_URL}{path}", json=body, headers=_AUTH_HEADERS, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code == 403 and attempt == 0:
+                print(f"[engine] Server POST {path} → 403, retrying in 3s…", file=sys.stderr)
+                _time.sleep(3)
+                continue
+            print(f"[engine] Server POST {path} → {r.status_code}: {r.text[:200]}", file=sys.stderr)
+        except requests.RequestException as e:
+            print(f"[engine] Server POST {path} error: {e}", file=sys.stderr)
+        break
+    return None
 
 # ────────────────────  Data persistence  ────────────────────
 
@@ -698,28 +710,38 @@ def main():
             DATA_FILE = os.path.join(basedir, 'characters.json')
 
     emit({"status": "ready"})
-    emit({"status": "connecting"})
-
-    try:
-        h = requests.get(f"{SERVER_URL}/health", timeout=30)
-        if h.status_code == 200:
-            emit({"status": "connected"})
-        else:
-            print(f"[engine] Server health check failed: {h.status_code}", file=sys.stderr)
-            emit({"status": "connect_failed"})
-    except Exception as e:
-        print(f"[engine] Server unreachable ({e}) — online features may fail", file=sys.stderr)
-        emit({"status": "connect_failed"})
 
     characters = load_data()
     for char in characters:
         char.check_resets()
     save_data(characters)
 
+    import time
+    server_checked = False
+
     for raw_line in sys.stdin:
         command = raw_line.strip()
         if not command:
             continue
+
+        if not server_checked:
+            server_checked = True
+            emit({"status": "connecting"})
+            connected = False
+            for attempt in range(3):
+                try:
+                    h = requests.get(f"{SERVER_URL}/health", timeout=30)
+                    if h.status_code == 200:
+                        emit({"status": "connected"})
+                        connected = True
+                        break
+                    print(f"[engine] Health check attempt {attempt+1}/3 failed: {h.status_code}", file=sys.stderr)
+                except Exception as e:
+                    print(f"[engine] Health check attempt {attempt+1}/3 error: {e}", file=sys.stderr)
+                if attempt < 2:
+                    time.sleep(5)
+            if not connected:
+                emit({"status": "connect_failed"})
 
         if command == "GET_CHARACTERS":
             emit([c.to_dict() for c in characters])
