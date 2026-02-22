@@ -37,7 +37,7 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "logo.ico",
+      "icon": "logo.png",
       "extraResources": [
         {
           "from": "dist-engine/engine.exe",
