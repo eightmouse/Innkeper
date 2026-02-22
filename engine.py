@@ -12,7 +12,7 @@ else:
     basedir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
 SERVER_URL = "https://innkeper.onrender.com"
-AUTH_KEY   = "r7XkP9mQ2zW6vT4nY8sH3dFa1cJuE5LbG0tC"
+AUTH_KEY   = "r7XkP9mQ2zW6vT4nY8sH3dFa1cJuE5LbG0tC" # <-- Hiello :3 , no this is not what you think it is ~
 DATA_FILE  = os.path.join(basedir, 'characters.json')
 
 # ============================================================
