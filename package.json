@@ -47,7 +47,7 @@
     },
     "linux": {
       "target": "AppImage",
-      "icon": "icon.png",
+      "icon": "logo.png",
       "extraResources": [
         {
           "from": "dist-engine/engine",
