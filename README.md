@@ -31,7 +31,7 @@ Started WoW not long ago and I found myself closing and opening WoWhead for buil
 <img width="400" height="640" alt="1" src="https://github.com/user-attachments/assets/51c84e45-74de-4a02-8894-e40259e16efb" />
 <img width="400" height="640" alt="2" src="https://github.com/user-attachments/assets/8552477b-6ea7-42dd-b200-8798aa67817f" />
 <img width="400" height="640" alt="3" src="https://github.com/user-attachments/assets/ea38203a-d11e-4e90-bb56-fcc6bcada0f9" />
-<img width="400" height="640" alt="4" src="https://github.com/user-attachments/assets/f1bfee97-f137-402e-b312-e31e3a5a558d" />
+<img width="400" height="640" alt="4" src="https://github.com/user-attachments/assets/7953f3a0-97ab-4c39-af8b-3d2cc2492197" />
 
 ## FaQ
 ***Q: Why Electron?*** <br />
@@ -49,11 +49,10 @@ Started WoW not long ago and I found myself closing and opening WoWhead for buil
 *A: Yes. When used correctly it's an amazing tool that provides help. I see it no differently than using StackOverflow or Google, with the difference that at least I'm not get bullied for asking/expressing myself poorly. If this bothers you I apologize, this app might not be for you.*
 
 ***Q: I'm on Linux/MacOS can I still use this app?*** <br />
-*A: Like Ronnie Coleman once said, 'YEAH BUDDY!'. However, because of MacOS nature you have to compile it yourself!*
+*A: Like Ronnie Coleman once said, 'YEAH BUDDY!'.*
 
 ## Known bugs
 - Demon Hunter (Devourer) nodes/skills not displaying correctly.
-
 
 ## Notes
 - Download is not available yet, I'm still building the app and I want it to have enough features and stability before releasing it to the pubblic.
