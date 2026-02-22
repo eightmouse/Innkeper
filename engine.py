@@ -29,7 +29,7 @@ if __name__ != "__main__":
 
     BLIZZARD_CLIENT_ID     = os.getenv("BLIZZARD_CLIENT_ID")
     BLIZZARD_CLIENT_SECRET = os.getenv("BLIZZARD_CLIENT_SECRET")
-    AUTH_KEY               = os.getenv("AUTH_KEY", "")
+    AUTH_KEY             = os.getenv("AUTH_KEY", "")
 
     app = FastAPI(title="Innkeeper API", version="1.0")
 
